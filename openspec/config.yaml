@@ -1,0 +1,15 @@
+project: vibe-photo-booth
+schema: spec-driven-with-adr
+sourceOfTruth: project.md
+adrDir: adr/
+changesDir: changes/
+archiveDir: archive/
+
+devices:
+  primary: iPhone 14 Plus (Safari, iOS)
+  secondary: iPad Air (Safari, iPadOS)
+
+notes: >
+  Client-only deployment. No backend gateway in this phase.
+  See project.md > Accepted Risk for the credential-handling tradeoff
+  this implies.
