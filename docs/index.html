@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#111111">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VIBE">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icon.svg">
+  <link rel="stylesheet" href="./styles.css">
+  <title>VIBE Photo Booth</title>
+</head>
+<body>
+  <main id="app">
+    <section id="setup" class="screen active">
+      <div class="brand-mark">VIBE</div>
+      <h1>Photo Booth</h1>
+      <p class="lead">Operator setup for a private iPhone prototype.</p>
+
+      <label>
+        OpenAI API key
+        <input id="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"
+          placeholder="Paste key for this session">
+      </label>
+
+      <label>
+        Event name
+        <input id="eventName" type="text" value="VIBE Test Session">
+      </label>
+
+      <div class="notice">
+        The key is kept in memory only. Reloading the page clears it.
+      </div>
+
+      <button id="startButton" class="primary">Start VIBE</button>
+      <button id="demoButton" class="secondary">Start without API · interface demo</button>
+    </section>
+
+    <section id="booth" class="screen">
+      <div class="topbar">
+        <div>
+          <strong>VIBE</strong>
+          <span id="status">Initializing</span>
+        </div>
+        <button id="operatorButton" class="small">Operator</button>
+      </div>
+
+      <div class="camera-shell">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="motionCanvas" width="80" height="60" hidden></canvas>
+        <div class="scanline"></div>
+        <div id="cameraMessage" class="camera-message">Camera initializing…</div>
+        <div id="countdown" class="countdown" aria-live="assertive"></div>
+      </div>
+
+      <div class="conversation">
+        <div class="orb" id="orb" aria-hidden="true"></div>
+        <div>
+          <div class="speaker">VIBE</div>
+          <p id="vibeText" aria-live="polite">Visual systems starting.</p>
+        </div>
+      </div>
+
+      <div id="controls" class="controls">
+        <button id="beginButton" class="primary">I’m ready</button>
+      </div>
+    </section>
+
+    <section id="scene" class="screen">
+      <div class="topbar">
+        <div><strong>VIBE</strong><span>Scene director</span></div>
+        <button class="small homeButton">Cancel</button>
+      </div>
+
+      <div class="panel">
+        <div class="orb compact"></div>
+        <h2>Describe the scene</h2>
+        <p>Try: “Paris café,” “astronauts on Mars,” or “ridiculous Hollywood premiere.”</p>
+        <textarea id="scenePrompt" rows="3" placeholder="What should VIBE create?">Playful Paris café scene</textarea>
+
+        <button id="voicePromptButton" class="secondary">🎙 Speak idea</button>
+
+        <h3>How should the scene affect you?</h3>
+        <div class="choice-grid">
+          <button class="choice selected" data-treatment="contextual">
+            <strong>According to scene</strong>
+            <span>VIBE chooses clothing, props and details.</span>
+          </button>
+          <button class="choice" data-treatment="custom">
+            <strong>Custom</strong>
+            <span>Specify what VIBE may change.</span>
+          </button>
+          <button class="choice" data-treatment="none">
+            <strong>No changes</strong>
+            <span>Keep the people as photographed.</span>
+          </button>
+        </div>
+
+        <label id="customLabel" hidden>
+          Custom instructions
+          <textarea id="customPrompt" rows="2" placeholder="Example: hats and baguettes, but no moustaches"></textarea>
+        </label>
+
+        <button id="reviewButton" class="primary">Review scene</button>
+      </div>
+    </section>
+
+    <section id="review" class="screen">
+      <div class="topbar">
+        <div><strong>VIBE</strong><span>Confirm reality alteration</span></div>
+        <button class="small homeButton">Cancel</button>
+      </div>
+      <div class="panel">
+        <div class="orb compact"></div>
+        <h2>Scene plan</h2>
+        <p id="sceneSummary" class="summary"></p>
+        <div class="button-row">
+          <button id="editButton" class="secondary">Change it</button>
+          <button id="captureButton" class="primary">Take photo</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="result" class="screen">
+      <div class="topbar">
+        <div><strong>VIBE</strong><span>Result</span></div>
+        <button class="small homeButton">Finish</button>
+      </div>
+      <div class="panel result-panel">
+        <canvas id="resultCanvas"></canvas>
+        <p id="resultMessage">Photographic evidence acquired.</p>
+        <div class="button-row">
+          <button id="downloadButton" class="primary">Save image</button>
+          <button id="generateButton" class="secondary">Generate AI version</button>
+        </div>
+        <p class="fineprint">AI generation is experimental in direct-browser mode and may require a serverless gateway.</p>
+      </div>
+    </section>
+
+    <dialog id="operatorDialog">
+      <h2>Operator controls</h2>
+      <p id="keyStatus"></p>
+      <button id="resetButton" class="secondary">Reset guest session</button>
+      <button id="closeOperator" class="primary">Return to booth</button>
+    </dialog>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
