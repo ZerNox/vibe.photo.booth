@@ -5,8 +5,13 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 ## Included
 
 - Front-camera and microphone permission flow
-- Synthetic VIBE voice using the device speech synthesizer
-- Guided scene choice
+- Live VIBE voice conversation via OpenAI's Realtime API (WebRTC,
+  `gpt-realtime-mini`) when an API key is entered — real AI speech and
+  listening, not just device text-to-speech
+- Fallback scripted greeting + device speech synthesizer when no API key
+  is entered (interface-demo mode) or if the Realtime connection fails
+- Guided scene choice — settable by voice (VIBE calls a `set_scene` tool
+  once it has your scene and treatment) or manually on the scene screen
 - Contextual / custom / no-change treatment modes
 - Spoken confirmation
 - Camera countdown and capture
@@ -16,9 +21,21 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 - Memory-only API-key handling
 - Home Screen PWA manifest and service worker
 
-## Important limitation
+## Important limitations
 
-The direct OpenAI image request is experimental. A browser may block it because of CORS or API security constraints. The correct production design uses a small serverless gateway. The rest of the booth prototype works without a backend.
+- The direct OpenAI image-edit request is experimental. A browser may
+  block it because of CORS or API security constraints. The rest of the
+  booth prototype works without it.
+- The Realtime voice integration talks directly to `api.openai.com` from
+  the browser using the key entered on the setup screen (same
+  client-held-key model as the image request — see
+  `openspec/adr/ADR-001-client-only-architecture.md`). It was written
+  against OpenAI's documented WebRTC flow but has not been verified
+  against a live key from this environment; if session setup fails,
+  check the browser console for the raw error from OpenAI first — it's
+  usually a one-line fix (e.g. a renamed voice or session field).
+- The correct production design for either of the above uses a small
+  serverless gateway, per ADR-001's stated revisit conditions.
 
 ## Test locally
 

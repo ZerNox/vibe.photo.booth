@@ -25,6 +25,13 @@ iPad / iPhone Browser (Safari, PWA)
 No backend service exists in this phase. Every arrow above terminates
 either on-device or at the third-party provider directly.
 
+**Implementation status**: the Voice Module is implemented in
+`docs/app.js` (`gpt-realtime-mini`, WebRTC, push-to-talk), scoped to the
+greeting + scene-discovery conversation. Capture/review/result status
+lines remain on local device text-to-speech rather than staying connected
+to Realtime for the whole session, to bound per-guest cost. See
+`docs/README.md` for known integration caveats.
+
 ## 2. Why Client-Only (and what it costs)
 
 Removing the gateway that v0.1 proposed removes:
