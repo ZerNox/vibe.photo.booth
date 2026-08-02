@@ -29,9 +29,10 @@ before any staffed-pilot scope change (see ADR-001).
 
 1. Guest privacy
 2. Frontier-quality voice and image generation — **confirmed decision**:
-   both `gpt-realtime` (voice) and `gpt-image-2` at high quality / high
-   input fidelity (image) are the deliberate choice over their cheaper
-   siblings (`gpt-realtime-mini`, lower `IMAGE_QUALITY` tiers). This is
+   both `gpt-realtime-2.1` (voice) and `gpt-image-2` at high quality /
+   high input fidelity (image) are the deliberate choice over their
+   cheaper siblings (`gpt-realtime-2.1-mini`, lower `IMAGE_QUALITY`
+   tiers). This is
    treated as the key success factor for the experience, not an
    afterthought — see `docs/README.md` "Cost per session and per event"
    for what that costs in practice (~$9–22 for the 80-attendee target

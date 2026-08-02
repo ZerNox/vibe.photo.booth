@@ -6,8 +6,9 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 
 - Front-camera and microphone permission flow
 - Live VIBE voice conversation via OpenAI's Realtime API (WebRTC,
-  flagship `gpt-realtime` model) when an API key is entered — real AI
-  speech and listening for the *entire* guest journey, not just device
+  `gpt-realtime-2.1` — lower latency and GPT-5-class reasoning vs the
+  earlier `gpt-realtime`) when an API key is entered — real AI speech and
+  listening for the *entire* guest journey, not just device
   text-to-speech and not just the scene-discovery step
 - A floating, audio-reactive orb (Web Audio analyser on the live voice
   stream) that visibly moves/glows in sync with VIBE's actual speech
@@ -75,8 +76,11 @@ iOS Safari, because the platform doesn't allow anything stronger:
 Two components, both metered by OpenAI, both pay-as-you-go against the
 key entered on the setup screen — not a ChatGPT-subscription flat rate.
 
-**Voice — `gpt-realtime` (flagship):** $32 / 1M audio-input tokens, $64 /
-1M audio-output tokens (600 input tokens/min, 1200 output tokens/min).
+**Voice — `gpt-realtime-2.1` (flagship):** $32 / 1M audio-input tokens,
+$64 / 1M audio-output tokens (600 input tokens/min, 1200 output
+tokens/min) — these per-token rates were already the ones used in this
+estimate before the model-name bump, so the cost figures below are
+unchanged by the 2.1 upgrade; only latency and reasoning quality improve.
 Works out to roughly **$0.06–$0.11 per minute** of active conversation
 with prompt caching, more without it. Because voice now drives the whole
 journey (greeting → scene → capture confirmation → save/retry/finish),
@@ -125,7 +129,7 @@ This is the actual target to plan against, and it's **not 80 sessions**
 **Call it $9–$22 for the full event** across a realistic group-size mix,
 with ~$11–$18 the realistic middle. Add ~15–20% headroom for guests who
 use "prova igen" (retry) — a practical planning ceiling of **~$27 total**
-for an 80-person event at current settings (`gpt-realtime` flagship
+for an 80-person event at current settings (`gpt-realtime-2.1` flagship
 voice, `gpt-image-2` high quality / high input fidelity). This is a cost
 estimate, not an enforced cap — see the open question in
 `add-operating-parameters` about whether a per-event budget ceiling

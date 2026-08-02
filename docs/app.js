@@ -3,7 +3,7 @@
   "use strict";
 
   const SPEECH_LANG = "sv-SE";
-  const REALTIME_MODEL = "gpt-realtime"; // flagship voice model
+  const REALTIME_MODEL = "gpt-realtime-2.1"; // flagship voice model — lower latency + GPT-5-class reasoning vs plain gpt-realtime
   const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
   const IMAGE_QUALITY = "high"; // low/medium/high — frontier quality is a confirmed product priority over cost
   const IMAGE_INPUT_FIDELITY = "high"; // preserve the source photo's faces/detail
