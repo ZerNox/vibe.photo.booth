@@ -8,8 +8,13 @@
 postcard | Absurd
 
 **Subject Transformation** (tiered, each tier a superset of the previous)
-1. None — no intentional changes to face, expression, body, pose, hair,
-   clothing (lighting/color/compositing edge correction still permitted)
+1. None — no intentional changes to face, expression, gaze direction,
+   hands, body, pose, hair (including hair edges), clothing (including
+   clothing edges), or any occluded area (nothing is synthesized into
+   regions the source photo doesn't show). Lighting/color-matching,
+   compositing, and edge correction against the new background remain
+   permitted — those are scene-integration operations, not subject
+   changes.
 2. Props only — added objects/accessories, no wardrobe change
 3. Wardrobe + Props — clothing changed, face/body untouched (**default**)
 4. Full contextual — permits facial hair, hairstyle, apparent age,

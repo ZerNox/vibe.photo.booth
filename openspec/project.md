@@ -85,6 +85,13 @@ delta specs, then recorded here once accepted.
 - `add-device-constraints`
 - `add-failure-recovery`
 - `add-key-lifecycle`
+- `add-ai-behavior-policy`
+- `add-minor-guest-handling`
+- `add-delivery-and-ownership`
+- `add-operating-parameters`
+
+See `verification-plan.md` for how acceptance of these changes will be
+demonstrated once implemented.
 
 ## 8. Provisional Product Decisions
 
@@ -104,3 +111,10 @@ delta specs, then recorded here once accepted.
 7. State machine implemented as four cooperating statecharts: booth
    lifecycle, guest journey, voice subsystem, generation subsystem (see
    `architecture.md` §3).
+8. A single operator is physically present and attentive for the entire
+   duration of every session; failure/recovery design may assume operator
+   intervention is possible (see `add-operating-parameters`, ADR-001).
+9. Conversation entry is hybrid, voice-preferred: every voice-driven step
+   has an always-visible touch equivalent. Listening is tap-to-speak, not
+   continuous open-mic. Barge-in is supported (see
+   `add-operating-parameters`).
