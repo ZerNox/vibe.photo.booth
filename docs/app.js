@@ -2,13 +2,15 @@
 (() => {
   "use strict";
 
+  const SPEECH_LANG = "sv-SE";
+
   const state = {
     apiKey: "",
     demo: true,
     stream: null,
     treatment: "contextual",
     capturedBlob: null,
-    eventName: "VIBE Test Session",
+    eventName: "VIBE Testsession",
     speaking: false
   };
 
@@ -19,11 +21,27 @@
     screens.forEach(s => s.classList.toggle("active", s.id === id));
   }
 
+  let swedishVoice = null;
+  function loadSwedishVoice() {
+    if (!("speechSynthesis" in window)) return;
+    const voices = speechSynthesis.getVoices();
+    if (!voices.length) return;
+    swedishVoice = voices.find(v => v.lang === SPEECH_LANG)
+      || voices.find(v => v.lang && v.lang.toLowerCase().startsWith("sv"))
+      || null;
+  }
+  if ("speechSynthesis" in window) {
+    loadSwedishVoice();
+    speechSynthesis.addEventListener("voiceschanged", loadSwedishVoice);
+  }
+
   function speak(text) {
     $("vibeText").textContent = text;
     if (!("speechSynthesis" in window)) return;
     speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = SPEECH_LANG;
+    if (swedishVoice) utterance.voice = swedishVoice;
     utterance.rate = 1.02;
     utterance.pitch = 0.92;
     state.speaking = true;
@@ -39,12 +57,12 @@
         audio: true
       });
       $("video").srcObject = state.stream;
-      $("cameraMessage").textContent = "Visual input online.";
-      $("status").textContent = "Ready";
-      speak("Visual systems online. Human interaction may now begin.");
+      $("cameraMessage").textContent = "Visuell inmatning aktiv.";
+      $("status").textContent = "Redo";
+      speak("Visuella system aktiva. Mänsklig interaktion kan nu börja.");
     } catch (error) {
-      $("cameraMessage").textContent = "Camera or microphone permission was not granted.";
-      $("status").textContent = "Permission required";
+      $("cameraMessage").textContent = "Kamera- eller mikrofonbehörighet gavs inte.";
+      $("status").textContent = "Behörighet krävs";
       console.error(error);
     }
   }
@@ -58,30 +76,30 @@
 
   function greeting() {
     const greetings = [
-      "Human detected. Imagination engine online.",
-      "Visual subject acquired. Ordinary photography has been disabled.",
-      "Greetings, carbon based creative unit. State your desired reality.",
-      "Movement confirmed. Social protocol initialized.",
-      "Excellent. New humans. My creative processors were becoming restless."
+      "Människa upptäckt. Fantasimotorn är aktiv.",
+      "Visuellt motiv identifierat. Vanlig fotografering har inaktiverats.",
+      "Hälsningar, kolbaserad kreativ enhet. Ange önskad verklighet.",
+      "Rörelse bekräftad. Socialt protokoll initierat.",
+      "Utmärkt. Nya människor. Mina kreativa processorer började bli rastlösa."
     ];
     return greetings[Math.floor(Math.random() * greetings.length)];
   }
 
   function buildSummary() {
-    const idea = $("scenePrompt").value.trim() || "an imaginative surprise scene";
+    const idea = $("scenePrompt").value.trim() || "en fantasifull överraskningsscen";
     const custom = $("customPrompt").value.trim();
     if (state.treatment === "contextual") {
-      return `Scene: ${idea}. VIBE will apply scene-appropriate wardrobe, props, lighting and playful details to the photographed people. For a playful Paris scene, this may include berets, striped clothing, baguettes and optional theatrical moustaches.`;
+      return `Scen: ${idea}. VIBE lägger till scenanpassade kläder, rekvisita, belysning och lekfulla detaljer på de fotograferade personerna. För en lekfull Parisscen kan detta inkludera baskrar, randiga kläder, baguetter och valfria teatraliska mustascher.`;
     }
     if (state.treatment === "custom") {
-      return `Scene: ${idea}. VIBE may change only the following: ${custom || "no custom changes have been specified"}.`;
+      return `Scen: ${idea}. VIBE får endast ändra följande: ${custom || "inga anpassade ändringar har angetts"}.`;
     }
-    return `Scene: ${idea}. The people will remain as photographed. VIBE will change only the setting, lighting and compositing needed to place them in the scene.`;
+    return `Scen: ${idea}. Personerna förblir som de fotograferades. VIBE ändrar endast miljö, belysning och sammansättning som krävs för att placera dem i scenen.`;
   }
 
   async function countdownAndCapture() {
     show("booth");
-    speak("Human arrangement acceptable. Capturing in three, two, one.");
+    speak("Mänsklig uppställning godkänd. Fotografering om tre, två, ett.");
     const countdown = $("countdown");
     for (const n of [3, 2, 1]) {
       countdown.textContent = n;
@@ -94,7 +112,7 @@
   function captureFrame() {
     const video = $("video");
     if (!video.videoWidth) {
-      alert("Camera is not ready.");
+      alert("Kameran är inte redo.");
       return;
     }
     const canvas = $("resultCanvas");
@@ -114,34 +132,37 @@
     ctx.fillRect(0, canvas.height - bannerHeight, canvas.width, bannerHeight);
     ctx.fillStyle = "#f7df1e";
     ctx.font = `800 ${Math.max(28, Math.round(canvas.width * .035))}px -apple-system, sans-serif`;
-    ctx.fillText("VIBE PHOTO BOOTH", 24, canvas.height - bannerHeight / 2 + 10);
+    ctx.fillText("VIBE FOTOBÅS", 24, canvas.height - bannerHeight / 2 + 10);
     ctx.fillStyle = "#ffffff";
     ctx.font = `500 ${Math.max(16, Math.round(canvas.width * .018))}px -apple-system, sans-serif`;
     ctx.textAlign = "right";
-    ctx.fillText("AI scene pending", canvas.width - 24, canvas.height - bannerHeight / 2 + 7);
+    ctx.fillText("AI-scen väntar", canvas.width - 24, canvas.height - bannerHeight / 2 + 7);
     ctx.textAlign = "left";
 
     canvas.toBlob(blob => state.capturedBlob = blob, "image/jpeg", .9);
-    $("resultMessage").textContent = "Photographic evidence acquired. Reality transformation is ready.";
+    const resultText = "Fotografiskt bevis säkrat. Verklighetsomvandling redo.";
+    $("resultMessage").textContent = resultText;
     show("result");
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance("Photographic evidence acquired. Reality transformation is ready.");
+    const u = new SpeechSynthesisUtterance(resultText);
+    u.lang = SPEECH_LANG;
+    if (swedishVoice) u.voice = swedishVoice;
     speechSynthesis.speak(u);
   }
 
   async function generateAI() {
     if (state.demo || !state.apiKey) {
-      alert("This session is running in interface-demo mode. Enter an API key from Operator Setup to attempt direct image generation.");
+      alert("Denna session körs i gränssnittsdemoläge. Ange en API-nyckel i Operatörsinställningar för att försöka med direkt bildgenerering.");
       return;
     }
     if (!state.capturedBlob) {
-      alert("Capture a photo first.");
+      alert("Ta ett foto först.");
       return;
     }
 
     $("generateButton").disabled = true;
-    $("generateButton").textContent = "Transforming…";
-    $("resultMessage").textContent = "Reality reconstruction in progress.";
+    $("generateButton").textContent = "Omvandlar…";
+    $("resultMessage").textContent = "Verklighetsrekonstruktion pågår.";
 
     const idea = $("scenePrompt").value.trim();
     const summary = buildSummary();
@@ -169,12 +190,12 @@
 
       if (!response.ok) {
         const text = await response.text();
-        throw new Error(`API request failed (${response.status}): ${text.slice(0, 400)}`);
+        throw new Error(`API-anrop misslyckades (${response.status}): ${text.slice(0, 400)}`);
       }
 
       const data = await response.json();
       const b64 = data?.data?.[0]?.b64_json;
-      if (!b64) throw new Error("No image data was returned.");
+      if (!b64) throw new Error("Ingen bilddata returnerades.");
 
       const img = new Image();
       img.onload = () => {
@@ -182,54 +203,54 @@
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         canvas.getContext("2d").drawImage(img, 0, 0);
-        $("resultMessage").textContent = "Transformation complete. Synthetic masterpiece verified.";
+        $("resultMessage").textContent = "Omvandling klar. Syntetiskt mästerverk verifierat.";
       };
       img.src = `data:image/png;base64,${b64}`;
     } catch (error) {
       console.error(error);
-      $("resultMessage").textContent = "Direct-browser generation failed. This may be caused by browser API restrictions; the camera and conversation prototype still work.";
+      $("resultMessage").textContent = "Direktgenerering i webbläsaren misslyckades. Detta kan bero på webbläsarens API-begränsningar; kamera- och samtalsprototypen fungerar fortfarande.";
       alert(error.message);
     } finally {
       $("generateButton").disabled = false;
-      $("generateButton").textContent = "Generate AI version";
+      $("generateButton").textContent = "Generera AI-version";
     }
   }
 
   function startSpeechInput() {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
-      alert("Speech recognition is unavailable in this Safari configuration. Type the idea instead.");
+      alert("Taligenkänning är inte tillgänglig i denna Safari-konfiguration. Skriv idén istället.");
       return;
     }
     const recognition = new Recognition();
-    recognition.lang = "en-US";
+    recognition.lang = SPEECH_LANG;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    $("voicePromptButton").textContent = "Listening…";
+    $("voicePromptButton").textContent = "Lyssnar…";
     recognition.onresult = e => {
       $("scenePrompt").value = e.results[0][0].transcript;
     };
-    recognition.onerror = e => alert(`Voice input error: ${e.error}`);
-    recognition.onend = () => $("voicePromptButton").textContent = "🎙 Speak idea";
+    recognition.onerror = e => alert(`Röstinmatningsfel: ${e.error}`);
+    recognition.onend = () => $("voicePromptButton").textContent = "🎙 Säg din idé";
     recognition.start();
   }
 
   function resetGuest() {
     state.capturedBlob = null;
-    $("scenePrompt").value = "Playful Paris café scene";
+    $("scenePrompt").value = "Lekfull scen på ett franskt café";
     $("customPrompt").value = "";
     state.treatment = "contextual";
     document.querySelectorAll(".choice").forEach(c => c.classList.toggle("selected", c.dataset.treatment === "contextual"));
     $("customLabel").hidden = true;
     show("booth");
-    $("cameraMessage").textContent = "Waiting for a creative human.";
-    speak("Session cleared. Returning imagination systems to standby.");
+    $("cameraMessage").textContent = "Väntar på en kreativ människa.";
+    speak("Sessionen rensad. Fantasisystemen återgår till vänteläge.");
   }
 
   $("startButton").addEventListener("click", async () => {
     state.apiKey = $("apiKey").value.trim();
     state.demo = !state.apiKey;
-    state.eventName = $("eventName").value.trim() || "VIBE Test Session";
+    state.eventName = $("eventName").value.trim() || "VIBE Testsession";
     $("apiKey").value = "";
     show("booth");
     await startCamera();
@@ -243,7 +264,7 @@
   });
 
   $("beginButton").addEventListener("click", () => {
-    speak(`${greeting()} Tell me the photograph you want. I will help choose the scene and how it affects you.`);
+    speak(`${greeting()} Berätta vilket foto du vill ha. Jag hjälper dig att välja scen och hur den påverkar dig.`);
     setTimeout(() => show("scene"), 1800);
   });
 
@@ -262,7 +283,10 @@
     show("review");
     if ("speechSynthesis" in window) {
       speechSynthesis.cancel();
-      speechSynthesis.speak(new SpeechSynthesisUtterance(summary + " Shall I proceed?"));
+      const u = new SpeechSynthesisUtterance(summary + " Ska jag fortsätta?");
+      u.lang = SPEECH_LANG;
+      if (swedishVoice) u.voice = swedishVoice;
+      speechSynthesis.speak(u);
     }
   });
   $("editButton").addEventListener("click", () => show("scene"));
@@ -270,7 +294,7 @@
   $("downloadButton").addEventListener("click", () => {
     const canvas = $("resultCanvas");
     const link = document.createElement("a");
-    link.download = `vibe-photo-${Date.now()}.jpg`;
+    link.download = `vibe-foto-${Date.now()}.jpg`;
     link.href = canvas.toDataURL("image/jpeg", .92);
     link.click();
   });
@@ -280,8 +304,8 @@
 
   $("operatorButton").addEventListener("click", () => {
     $("keyStatus").textContent = state.apiKey
-      ? `API key active for this page session · ending ${state.apiKey.slice(-4)}`
-      : "No API key active · interface demo mode";
+      ? `API-nyckel aktiv för denna sidsession · slutar på ${state.apiKey.slice(-4)}`
+      : "Ingen API-nyckel aktiv · gränssnittsdemoläge";
     $("operatorDialog").showModal();
   });
   $("closeOperator").addEventListener("click", () => $("operatorDialog").close());

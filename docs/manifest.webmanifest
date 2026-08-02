@@ -1,6 +1,7 @@
 {
-  "name": "VIBE Photo Booth",
+  "name": "VIBE Fotobås",
   "short_name": "VIBE",
+  "lang": "sv",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#080808",

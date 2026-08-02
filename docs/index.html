@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="sv">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
@@ -10,48 +10,48 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="stylesheet" href="./styles.css">
-  <title>VIBE Photo Booth</title>
+  <title>VIBE Fotobås</title>
 </head>
 <body>
   <main id="app">
     <section id="setup" class="screen active">
       <div class="brand-mark">VIBE</div>
-      <h1>Photo Booth</h1>
-      <p class="lead">Operator setup for a private iPhone prototype.</p>
+      <h1>Fotobås</h1>
+      <p class="lead">Operatörsinställningar för en privat iPhone-prototyp.</p>
 
       <label>
-        OpenAI API key
+        OpenAI API-nyckel
         <input id="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"
-          placeholder="Paste key for this session">
+          placeholder="Klistra in nyckel för denna session">
       </label>
 
       <label>
-        Event name
-        <input id="eventName" type="text" value="VIBE Test Session">
+        Eventnamn
+        <input id="eventName" type="text" value="VIBE Testsession">
       </label>
 
       <div class="notice">
-        The key is kept in memory only. Reloading the page clears it.
+        Nyckeln lagras endast i minnet. Om sidan laddas om raderas den.
       </div>
 
-      <button id="startButton" class="primary">Start VIBE</button>
-      <button id="demoButton" class="secondary">Start without API · interface demo</button>
+      <button id="startButton" class="primary">Starta VIBE</button>
+      <button id="demoButton" class="secondary">Starta utan API · gränssnittsdemo</button>
     </section>
 
     <section id="booth" class="screen">
       <div class="topbar">
         <div>
           <strong>VIBE</strong>
-          <span id="status">Initializing</span>
+          <span id="status">Initierar</span>
         </div>
-        <button id="operatorButton" class="small">Operator</button>
+        <button id="operatorButton" class="small">Operatör</button>
       </div>
 
       <div class="camera-shell">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="motionCanvas" width="80" height="60" hidden></canvas>
         <div class="scanline"></div>
-        <div id="cameraMessage" class="camera-message">Camera initializing…</div>
+        <div id="cameraMessage" class="camera-message">Kameran initieras…</div>
         <div id="countdown" class="countdown" aria-live="assertive"></div>
       </div>
 
@@ -59,91 +59,91 @@
         <div class="orb" id="orb" aria-hidden="true"></div>
         <div>
           <div class="speaker">VIBE</div>
-          <p id="vibeText" aria-live="polite">Visual systems starting.</p>
+          <p id="vibeText" aria-live="polite">Visuella system startar.</p>
         </div>
       </div>
 
       <div id="controls" class="controls">
-        <button id="beginButton" class="primary">I’m ready</button>
+        <button id="beginButton" class="primary">Jag är redo</button>
       </div>
     </section>
 
     <section id="scene" class="screen">
       <div class="topbar">
-        <div><strong>VIBE</strong><span>Scene director</span></div>
-        <button class="small homeButton">Cancel</button>
+        <div><strong>VIBE</strong><span>Scenregissör</span></div>
+        <button class="small homeButton">Avbryt</button>
       </div>
 
       <div class="panel">
         <div class="orb compact"></div>
-        <h2>Describe the scene</h2>
-        <p>Try: “Paris café,” “astronauts on Mars,” or “ridiculous Hollywood premiere.”</p>
-        <textarea id="scenePrompt" rows="3" placeholder="What should VIBE create?">Playful Paris café scene</textarea>
+        <h2>Beskriv scenen</h2>
+        <p>Prova: ”Parisiskt café”, ”astronauter på Mars” eller ”absurd Hollywood-premiär”.</p>
+        <textarea id="scenePrompt" rows="3" placeholder="Vad ska VIBE skapa?">Lekfull scen på ett franskt café</textarea>
 
-        <button id="voicePromptButton" class="secondary">🎙 Speak idea</button>
+        <button id="voicePromptButton" class="secondary">🎙 Säg din idé</button>
 
-        <h3>How should the scene affect you?</h3>
+        <h3>Hur ska scenen påverka dig?</h3>
         <div class="choice-grid">
           <button class="choice selected" data-treatment="contextual">
-            <strong>According to scene</strong>
-            <span>VIBE chooses clothing, props and details.</span>
+            <strong>Enligt scenen</strong>
+            <span>VIBE väljer kläder, rekvisita och detaljer.</span>
           </button>
           <button class="choice" data-treatment="custom">
-            <strong>Custom</strong>
-            <span>Specify what VIBE may change.</span>
+            <strong>Anpassat</strong>
+            <span>Ange vad VIBE får ändra.</span>
           </button>
           <button class="choice" data-treatment="none">
-            <strong>No changes</strong>
-            <span>Keep the people as photographed.</span>
+            <strong>Inga ändringar</strong>
+            <span>Behåll personerna som de fotograferades.</span>
           </button>
         </div>
 
         <label id="customLabel" hidden>
-          Custom instructions
-          <textarea id="customPrompt" rows="2" placeholder="Example: hats and baguettes, but no moustaches"></textarea>
+          Anpassade instruktioner
+          <textarea id="customPrompt" rows="2" placeholder="Exempel: hattar och baguetter, men inga mustascher"></textarea>
         </label>
 
-        <button id="reviewButton" class="primary">Review scene</button>
+        <button id="reviewButton" class="primary">Granska scen</button>
       </div>
     </section>
 
     <section id="review" class="screen">
       <div class="topbar">
-        <div><strong>VIBE</strong><span>Confirm reality alteration</span></div>
-        <button class="small homeButton">Cancel</button>
+        <div><strong>VIBE</strong><span>Bekräfta verklighetsförändring</span></div>
+        <button class="small homeButton">Avbryt</button>
       </div>
       <div class="panel">
         <div class="orb compact"></div>
-        <h2>Scene plan</h2>
+        <h2>Scenplan</h2>
         <p id="sceneSummary" class="summary"></p>
         <div class="button-row">
-          <button id="editButton" class="secondary">Change it</button>
-          <button id="captureButton" class="primary">Take photo</button>
+          <button id="editButton" class="secondary">Ändra</button>
+          <button id="captureButton" class="primary">Ta foto</button>
         </div>
       </div>
     </section>
 
     <section id="result" class="screen">
       <div class="topbar">
-        <div><strong>VIBE</strong><span>Result</span></div>
-        <button class="small homeButton">Finish</button>
+        <div><strong>VIBE</strong><span>Resultat</span></div>
+        <button class="small homeButton">Klar</button>
       </div>
       <div class="panel result-panel">
         <canvas id="resultCanvas"></canvas>
-        <p id="resultMessage">Photographic evidence acquired.</p>
+        <p id="resultMessage">Fotografiskt bevis säkrat.</p>
         <div class="button-row">
-          <button id="downloadButton" class="primary">Save image</button>
-          <button id="generateButton" class="secondary">Generate AI version</button>
+          <button id="downloadButton" class="primary">Spara bild</button>
+          <button id="generateButton" class="secondary">Generera AI-version</button>
         </div>
-        <p class="fineprint">AI generation is experimental in direct-browser mode and may require a serverless gateway.</p>
+        <p class="fineprint">AI-generering är experimentell i direktläge i webbläsaren och kan kräva en serverlös gateway.</p>
       </div>
     </section>
 
     <dialog id="operatorDialog">
-      <h2>Operator controls</h2>
+      <h2>Operatörskontroller</h2>
       <p id="keyStatus"></p>
-      <button id="resetButton" class="secondary">Reset guest session</button>
-      <button id="closeOperator" class="primary">Return to booth</button>
+      <button id="resetButton" class="secondary">Återställ gästsession</button>
+      <button id="closeOperator" class="primary">Tillbaka till bås</button>
     </dialog>
   </main>
 
