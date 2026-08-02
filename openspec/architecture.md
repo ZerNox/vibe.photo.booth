@@ -41,10 +41,14 @@ scale/glow in real time while VIBE is actually speaking. Generated images
 are auto-saved to the device on completion (see
 `add-delivery-and-ownership` DELIV-FR-004 — this supersedes that change's
 original "no on-device retention" stance). Image generation uses
-`gpt-image-1.5` (the flagship successor; `gpt-image-1` retires
-2026-10-23). See `docs/README.md` for known integration caveats — none of
-the OpenAI wire-format details here have been verified against a live key
-from this environment.
+`gpt-image-2` (current flagship as of April 2026; superseded
+`gpt-image-1.5`, which itself superseded `gpt-image-1`, retiring
+2026-10-23), requested at explicit `quality: "high"` and
+`input_fidelity: "high"` rather than API defaults, since identity
+preservation is a named requirement (`add-transformation-contract`).
+See `docs/README.md` for known integration caveats and cost trade-offs —
+none of the OpenAI wire-format details here have been verified against a
+live key from this environment.
 
 ## 2. Why Client-Only (and what it costs)
 

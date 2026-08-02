@@ -12,7 +12,7 @@ secondary option.
 
 Concretely:
 
-1. **Automatic on-device save (primary)** — as soon as `gpt-image-1.5`
+1. **Automatic on-device save (primary)** — as soon as `gpt-image-2`
    returns the generated image, the app triggers a browser download of
    it. On iOS Safari this lands in Files/Downloads; the web platform does
    not allow a page to silently write into the Photos library without a

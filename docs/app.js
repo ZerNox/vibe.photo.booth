@@ -4,7 +4,9 @@
 
   const SPEECH_LANG = "sv-SE";
   const REALTIME_MODEL = "gpt-realtime"; // flagship voice model
-  const IMAGE_MODEL = "gpt-image-1.5"; // gpt-image-1 retires 2026-10-23; using the flagship successor
+  const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
+  const IMAGE_QUALITY = "high"; // low/medium/high — high favors identity preservation over cost/speed
+  const IMAGE_INPUT_FIDELITY = "high"; // preserve the source photo's faces/detail during the edit
   // Voice name introduced with the gpt-realtime GA release. If session
   // creation fails, this is the first thing to check against current
   // OpenAI docs — it's the field most likely to have moved.
@@ -560,6 +562,8 @@ Regler du aldrig bryter mot:
       form.append("prompt", prompt);
       form.append("image", state.capturedBlob, "capture.jpg");
       form.append("size", "1024x1024");
+      form.append("quality", IMAGE_QUALITY);
+      form.append("input_fidelity", IMAGE_INPUT_FIDELITY);
 
       const response = await fetch("https://api.openai.com/v1/images/edits", {
         method: "POST",

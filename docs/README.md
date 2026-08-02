@@ -27,7 +27,8 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 - Automatic on-device save the moment a generated image is ready (see
   "Where images end up" below for what "automatic" can and can't mean on
   iOS)
-- Optional direct-browser image-edit API attempt (`gpt-image-1.5`)
+- Optional direct-browser image-edit API attempt (`gpt-image-2`, high
+  quality + high input fidelity)
 - Memory-only API-key handling
 - Home Screen PWA manifest and service worker
 
@@ -84,26 +85,42 @@ to **1.5–3 minutes** of actual back-and-forth than the ~30–60 seconds
 estimated when this used to be scoped to scene discovery only on the
 mini model. That's roughly **$0.10–$0.30 per guest** for voice alone.
 
-**Images — `gpt-image-1.5`:** at medium quality, 1024×1024, **$0.034 per
-image** (low: $0.009, high: $0.133). This build requests one generation
-per capture automatically, plus whatever "prova igen" (retry) requests
-the guest makes via `result_action`.
+**Images — `gpt-image-2`** (current flagship, released April 2026 —
+supersedes `gpt-image-1.5`): at 1024×1024, roughly **$0.006 low /
+$0.053 medium / $0.211 high** per image. This build requests `quality:
+"high"` and `input_fidelity: "high"` explicitly (`IMAGE_QUALITY` /
+`IMAGE_INPUT_FIDELITY` in `app.js`) rather than relying on API defaults,
+because identity preservation is a named product requirement here (see
+`openspec/changes/add-transformation-contract` — the ≥4/5 rubric).
+`input_fidelity: "high"` adds further cost on top of the quality tier
+(confirmed for `gpt-image-1.5`, presumed to carry over to `gpt-image-2`
+but not independently verified) in exchange for the model preserving
+more of the source photo's actual face/detail during the edit, which
+matters more here than it would for a generic image-gen use case. One
+generation happens automatically per capture, plus whatever "prova igen"
+(retry) requests the guest makes via `result_action`.
 
-**Combined, per guest:** roughly **$0.15–$0.35** for one photo with a
-typical conversation length; more if the guest retries the image a few
-times.
+**Combined, per guest:** roughly **$0.35–$0.55** for one photo at high
+quality/fidelity with a typical conversation length; more with retries.
+Dropping `IMAGE_QUALITY` to `"medium"` cuts the per-image cost to about a
+quarter of the high tier if the identity-preservation bar can be met at
+medium — worth an A/B check against the rubric before assuming high is
+necessary.
 
 **Per event** (using the provisional envelope in
 `openspec/changes/add-operating-parameters/design.md` — ~10 guests/hour,
-up to 2 hours, ~20 guests): roughly **$3–$7 for voice** plus **$0.70–$1
-for images**, so **call it $4–$8 for a full test event** at default
-settings. Still cheap in absolute terms, but meaningfully more than the
-`gpt-realtime-mini` + scene-discovery-only estimate from before this
-change (~$1–2/event) — worth knowing given the model and scope choice
-made here. Switching back to `gpt-realtime-mini` (change `REALTIME_MODEL`
-in `app.js`) would cut the voice portion roughly 3x if cost becomes a
-concern; pricing figures here couldn't be verified against OpenAI's live
-pricing page from this environment (network-blocked) and are drawn from
+up to 2 hours, ~20 guests, ~1.3 images/guest average with retries):
+roughly **$3–$7 for voice** plus **$5–$7 for images** at the high-quality
+default, so **call it $9–$14 for a full test event**. Still small in
+absolute terms for an event budget, but a real step up from the
+`gpt-realtime-mini` + medium-quality-image estimate from earlier in this
+project (~$1–2/event) — that's the direct cost of choosing flagship
+voice, full-journey voice control, and high-fidelity image quality over
+the cheaper defaults. Two independent levers to pull down if cost becomes
+a concern: `REALTIME_MODEL` back to `gpt-realtime-mini` (~3x cheaper
+voice), or `IMAGE_QUALITY` down to `"medium"` (~4x cheaper images).
+Pricing figures here couldn't be verified against OpenAI's live pricing
+page from this environment (network-blocked) and are drawn from
 third-party pricing trackers — sanity-check against
 platform.openai.com/pricing before committing a real budget.
 
