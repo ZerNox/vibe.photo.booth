@@ -88,26 +88,22 @@ mini model. That's roughly **$0.10–$0.30 per guest** for voice alone.
 **Images — `gpt-image-2`** (current flagship, released April 2026 —
 supersedes `gpt-image-1.5`): at 1024×1024, roughly **$0.006 low /
 $0.053 medium / $0.211 high** per image. This build requests `quality:
-"medium"` — a deliberate balance, not the default — plus
-`input_fidelity: "high"` explicitly (`IMAGE_QUALITY` /
-`IMAGE_INPUT_FIDELITY` in `app.js`). The two settings serve different
-goals: `quality` is general rendering polish (worth trading down for
-cost), while `input_fidelity` controls how much of the source photo's
-actual face/detail survives the edit, which is the one thing this
-product's spec holds to a hard, named bar (`openspec/changes/
-add-transformation-contract`'s ≥4/5 identity-preservation rubric) — so
-that one stays high even though it costs more (confirmed for
-`gpt-image-1.5`, presumed to carry over to `gpt-image-2` but not
-independently verified). One generation happens automatically per
-capture, plus whatever "prova igen" (retry) requests the guest makes via
-`result_action`.
+"high"` and `input_fidelity: "high"` explicitly (`IMAGE_QUALITY` /
+`IMAGE_INPUT_FIDELITY` in `app.js`) — both settings at their frontier
+tier, not the API default and not the cheaper mid-tier this project
+briefly used. **Confirmed product priority: frontier-quality voice and
+image generation, cost secondary.** `input_fidelity` is the one that's
+also a named spec requirement regardless of that priority — it controls
+how much of the source photo's actual face/detail survives the edit,
+which `add-transformation-contract`'s ≥4/5 identity-preservation rubric
+holds to a hard bar (confirmed for `gpt-image-1.5`, presumed to carry
+over to `gpt-image-2` but not independently verified). One generation
+happens automatically per capture, plus whatever "prova igen" (retry)
+requests the guest makes via `result_action`.
 
 **Combined, per booth session (one photo, regardless of group size):**
-roughly **$0.20–$0.40** at medium quality / high fidelity with a typical
-conversation length; more with retries. Worth an actual A/B check against
-the rubric once you can test on-device — if medium quality doesn't
-visibly hurt the result, this is the right default; if it does,
-`IMAGE_QUALITY` is a one-line bump back to `"high"`.
+roughly **$0.35–$0.55** at high quality / high fidelity with a typical
+conversation length; more with retries.
 
 Note this cost is **per session, not per person** — a group of 2–3 posing
 together for one photo costs the same as a single guest, since voice
@@ -120,25 +116,27 @@ This is the actual target to plan against, and it's **not 80 sessions**
 — since cost is driven by booth sessions, not headcount, 80 attendees at
 2–3 per photo works out to **27–40 sessions** (80 ÷ 3 ≈ 27, 80 ÷ 2 = 40):
 
-| Group mix | Sessions | Total @ $0.20–$0.40/session |
+| Group mix | Sessions | Total @ $0.35–$0.55/session |
 |---|---|---|
-| Mostly 3-person groups | ~27 | **~$5–$11** |
-| Mixed 2s and 3s | ~32 | **~$6–$13** |
-| Mostly 2-person groups | ~40 | **~$8–$16** |
+| Mostly 3-person groups | ~27 | **~$9–$15** |
+| Mixed 2s and 3s | ~32 | **~$11–$18** |
+| Mostly 2-person groups | ~40 | **~$14–$22** |
 
-**Call it $6–$16 for the full event** across a realistic group-size mix.
-Add ~15–20% headroom for guests who use "prova igen" (retry) — a
-practical planning ceiling of **~$20 total** for an 80-person event at
-current settings (`gpt-realtime` flagship voice, `gpt-image-2` medium
-quality / high input fidelity). This is a cost estimate, not an enforced
-cap — see the open question in `add-operating-parameters` about whether
-a per-event budget ceiling should become an actual hard requirement
-(mentioned but not yet built) rather than just a planning number.
-
-The other lever, if cost needs to come down further: `REALTIME_MODEL`
-back to `gpt-realtime-mini` cuts the voice portion roughly 3x. Pricing
-figures here couldn't be verified against OpenAI's live pricing page
-from this environment (network-blocked) and are drawn from third-party
+**Call it $9–$22 for the full event** across a realistic group-size mix,
+with ~$11–$18 the realistic middle. Add ~15–20% headroom for guests who
+use "prova igen" (retry) — a practical planning ceiling of **~$27 total**
+for an 80-person event at current settings (`gpt-realtime` flagship
+voice, `gpt-image-2` high quality / high input fidelity). This is a cost
+estimate, not an enforced cap — see the open question in
+`add-operating-parameters` about whether a per-event budget ceiling
+should become an actual hard requirement (mentioned but not yet built)
+rather than just a planning number. Given frontier quality is now the
+confirmed priority, that ceiling should be read as a sanity check against
+a misbehaving/looping session, not a lever to trade quality away —
+if cost needs to come down, that's a decision to revisit deliberately,
+not something to quietly walk back by dropping `IMAGE_QUALITY` again.
+Pricing figures here couldn't be verified against OpenAI's live pricing
+page from this environment (network-blocked) and are drawn from third-party
 pricing trackers — sanity-check against platform.openai.com/pricing
 before committing a real budget.
 

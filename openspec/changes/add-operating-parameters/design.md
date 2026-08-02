@@ -28,11 +28,20 @@ before any staffed-pilot scope change (see ADR-001).
 ## Trade-Off Priority Ranking (this phase)
 
 1. Guest privacy
-2. Memorable conversation
-3. High-quality final image
+2. Frontier-quality voice and image generation — **confirmed decision**:
+   both `gpt-realtime` (voice) and `gpt-image-2` at high quality / high
+   input fidelity (image) are the deliberate choice over their cheaper
+   siblings (`gpt-realtime-mini`, lower `IMAGE_QUALITY` tiers). This is
+   treated as the key success factor for the experience, not an
+   afterthought — see `docs/README.md` "Cost per session and per event"
+   for what that costs in practice (~$9–22 for the 80-attendee target
+   event) and the explicit note that cost is a sanity check here, not a
+   lever to quietly trade quality away.
+3. Memorable conversation
 4. Simplicity of implementation
 5. Fast throughput
-6. Low cost per session
+6. Low cost per session — deliberately below quality in this ranking; see
+   above.
 7. Creative freedom
 8. Reliable unattended operation — deprioritized deliberately; this phase
    requires operator presence anyway (ADR-001), so unattended reliability

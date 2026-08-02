@@ -43,10 +43,13 @@ are auto-saved to the device on completion (see
 original "no on-device retention" stance). Image generation uses
 `gpt-image-2` (current flagship as of April 2026; superseded
 `gpt-image-1.5`, which itself superseded `gpt-image-1`, retiring
-2026-10-23), requested at explicit `quality: "medium"` (general polish,
-traded down for cost) and `input_fidelity: "high"` (identity
-preservation, kept high) rather than API defaults, since only the latter
-is a named requirement (`add-transformation-contract`).
+2026-10-23), requested at explicit `quality: "high"` and
+`input_fidelity: "high"` — both at frontier tier, per the confirmed
+product priority that frontier-quality voice and image generation matter
+more than minimizing cost (`add-operating-parameters` §Trade-Off Priority
+Ranking). `input_fidelity` is additionally a named spec requirement
+regardless of that priority (`add-transformation-contract`'s
+identity-preservation rubric).
 See `docs/README.md` for known integration caveats and cost trade-offs —
 none of the OpenAI wire-format details here have been verified against a
 live key from this environment.
