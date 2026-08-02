@@ -11,9 +11,14 @@ out of scope (see ADR-001 threshold conditions).
 
 ## Provisional Event-Load Envelope (prototype phase)
 
-- Up to ~10 guests/hour
-- Group size: 1–6 people
-- Single continuous test/demo block, ≤2 hours
+- **~80 total attendees, 2–3 people per photo** (confirmed target for
+  cost planning) — works out to roughly **27–40 booth sessions**
+  (80 ÷ 3 to 80 ÷ 2), not 80 sessions. Voice-session length and
+  image-generation cost are per *session* (per booth visit), not per
+  individual person in frame, so group size changes session count but
+  not per-session cost — see `docs/README.md` "Cost per session and per
+  event" for the worked estimate against this figure.
+- Event duration / guests-per-hour: not yet specified — still open
 - One iPad, one operator
 - No formal queue system — informal line, operator manages manually
 

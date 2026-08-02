@@ -102,26 +102,45 @@ independently verified). One generation happens automatically per
 capture, plus whatever "prova igen" (retry) requests the guest makes via
 `result_action`.
 
-**Combined, per guest:** roughly **$0.20–$0.40** for one photo at
-medium quality / high fidelity with a typical conversation length; more
-with retries. Worth an actual A/B check against the rubric once you can
-test on-device — if medium quality doesn't visibly hurt the result, this
-is the right default; if it does, `IMAGE_QUALITY` is a one-line bump back
-to `"high"`.
+**Combined, per booth session (one photo, regardless of group size):**
+roughly **$0.20–$0.40** at medium quality / high fidelity with a typical
+conversation length; more with retries. Worth an actual A/B check against
+the rubric once you can test on-device — if medium quality doesn't
+visibly hurt the result, this is the right default; if it does,
+`IMAGE_QUALITY` is a one-line bump back to `"high"`.
 
-**Per event** (using the provisional envelope in
-`openspec/changes/add-operating-parameters/design.md` — ~10 guests/hour,
-up to 2 hours, ~20 guests, ~1.3 images/guest average with retries):
-roughly **$3–$7 for voice** plus **$1.50–$2 for images**, so **call it
-$5–$9 for a full test event** — noticeably cheaper than the all-high-tier
-estimate ($9–14) while keeping the identity-preservation setting intact.
-Still small in absolute terms for an event budget. The other lever, if
-cost needs to come down further, is `REALTIME_MODEL` back to
-`gpt-realtime-mini` (~3x cheaper voice). Pricing figures here couldn't be
-verified against OpenAI's live pricing page from this environment
-(network-blocked) and are drawn from third-party pricing trackers —
-sanity-check against platform.openai.com/pricing before committing a
-real budget.
+Note this cost is **per session, not per person** — a group of 2–3 posing
+together for one photo costs the same as a single guest, since voice
+conversation length and image-generation pricing don't scale with how
+many people are in frame.
+
+### Worked estimate: 80 attendees, 2–3 people per photo
+
+This is the actual target to plan against, and it's **not 80 sessions**
+— since cost is driven by booth sessions, not headcount, 80 attendees at
+2–3 per photo works out to **27–40 sessions** (80 ÷ 3 ≈ 27, 80 ÷ 2 = 40):
+
+| Group mix | Sessions | Total @ $0.20–$0.40/session |
+|---|---|---|
+| Mostly 3-person groups | ~27 | **~$5–$11** |
+| Mixed 2s and 3s | ~32 | **~$6–$13** |
+| Mostly 2-person groups | ~40 | **~$8–$16** |
+
+**Call it $6–$16 for the full event** across a realistic group-size mix.
+Add ~15–20% headroom for guests who use "prova igen" (retry) — a
+practical planning ceiling of **~$20 total** for an 80-person event at
+current settings (`gpt-realtime` flagship voice, `gpt-image-2` medium
+quality / high input fidelity). This is a cost estimate, not an enforced
+cap — see the open question in `add-operating-parameters` about whether
+a per-event budget ceiling should become an actual hard requirement
+(mentioned but not yet built) rather than just a planning number.
+
+The other lever, if cost needs to come down further: `REALTIME_MODEL`
+back to `gpt-realtime-mini` cuts the voice portion roughly 3x. Pricing
+figures here couldn't be verified against OpenAI's live pricing page
+from this environment (network-blocked) and are drawn from third-party
+pricing trackers — sanity-check against platform.openai.com/pricing
+before committing a real budget.
 
 ## Test locally
 
