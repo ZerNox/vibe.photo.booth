@@ -88,41 +88,40 @@ mini model. That's roughly **$0.10–$0.30 per guest** for voice alone.
 **Images — `gpt-image-2`** (current flagship, released April 2026 —
 supersedes `gpt-image-1.5`): at 1024×1024, roughly **$0.006 low /
 $0.053 medium / $0.211 high** per image. This build requests `quality:
-"high"` and `input_fidelity: "high"` explicitly (`IMAGE_QUALITY` /
-`IMAGE_INPUT_FIDELITY` in `app.js`) rather than relying on API defaults,
-because identity preservation is a named product requirement here (see
-`openspec/changes/add-transformation-contract` — the ≥4/5 rubric).
-`input_fidelity: "high"` adds further cost on top of the quality tier
-(confirmed for `gpt-image-1.5`, presumed to carry over to `gpt-image-2`
-but not independently verified) in exchange for the model preserving
-more of the source photo's actual face/detail during the edit, which
-matters more here than it would for a generic image-gen use case. One
-generation happens automatically per capture, plus whatever "prova igen"
-(retry) requests the guest makes via `result_action`.
+"medium"` — a deliberate balance, not the default — plus
+`input_fidelity: "high"` explicitly (`IMAGE_QUALITY` /
+`IMAGE_INPUT_FIDELITY` in `app.js`). The two settings serve different
+goals: `quality` is general rendering polish (worth trading down for
+cost), while `input_fidelity` controls how much of the source photo's
+actual face/detail survives the edit, which is the one thing this
+product's spec holds to a hard, named bar (`openspec/changes/
+add-transformation-contract`'s ≥4/5 identity-preservation rubric) — so
+that one stays high even though it costs more (confirmed for
+`gpt-image-1.5`, presumed to carry over to `gpt-image-2` but not
+independently verified). One generation happens automatically per
+capture, plus whatever "prova igen" (retry) requests the guest makes via
+`result_action`.
 
-**Combined, per guest:** roughly **$0.35–$0.55** for one photo at high
-quality/fidelity with a typical conversation length; more with retries.
-Dropping `IMAGE_QUALITY` to `"medium"` cuts the per-image cost to about a
-quarter of the high tier if the identity-preservation bar can be met at
-medium — worth an A/B check against the rubric before assuming high is
-necessary.
+**Combined, per guest:** roughly **$0.20–$0.40** for one photo at
+medium quality / high fidelity with a typical conversation length; more
+with retries. Worth an actual A/B check against the rubric once you can
+test on-device — if medium quality doesn't visibly hurt the result, this
+is the right default; if it does, `IMAGE_QUALITY` is a one-line bump back
+to `"high"`.
 
 **Per event** (using the provisional envelope in
 `openspec/changes/add-operating-parameters/design.md` — ~10 guests/hour,
 up to 2 hours, ~20 guests, ~1.3 images/guest average with retries):
-roughly **$3–$7 for voice** plus **$5–$7 for images** at the high-quality
-default, so **call it $9–$14 for a full test event**. Still small in
-absolute terms for an event budget, but a real step up from the
-`gpt-realtime-mini` + medium-quality-image estimate from earlier in this
-project (~$1–2/event) — that's the direct cost of choosing flagship
-voice, full-journey voice control, and high-fidelity image quality over
-the cheaper defaults. Two independent levers to pull down if cost becomes
-a concern: `REALTIME_MODEL` back to `gpt-realtime-mini` (~3x cheaper
-voice), or `IMAGE_QUALITY` down to `"medium"` (~4x cheaper images).
-Pricing figures here couldn't be verified against OpenAI's live pricing
-page from this environment (network-blocked) and are drawn from
-third-party pricing trackers — sanity-check against
-platform.openai.com/pricing before committing a real budget.
+roughly **$3–$7 for voice** plus **$1.50–$2 for images**, so **call it
+$5–$9 for a full test event** — noticeably cheaper than the all-high-tier
+estimate ($9–14) while keeping the identity-preservation setting intact.
+Still small in absolute terms for an event budget. The other lever, if
+cost needs to come down further, is `REALTIME_MODEL` back to
+`gpt-realtime-mini` (~3x cheaper voice). Pricing figures here couldn't be
+verified against OpenAI's live pricing page from this environment
+(network-blocked) and are drawn from third-party pricing trackers —
+sanity-check against platform.openai.com/pricing before committing a
+real budget.
 
 ## Test locally
 

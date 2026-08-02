@@ -5,8 +5,8 @@
   const SPEECH_LANG = "sv-SE";
   const REALTIME_MODEL = "gpt-realtime"; // flagship voice model
   const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
-  const IMAGE_QUALITY = "high"; // low/medium/high — high favors identity preservation over cost/speed
-  const IMAGE_INPUT_FIDELITY = "high"; // preserve the source photo's faces/detail during the edit
+  const IMAGE_QUALITY = "medium"; // low/medium/high — balanced tier; general polish, not identity-critical
+  const IMAGE_INPUT_FIDELITY = "high"; // preserve the source photo's faces/detail — this one IS identity-critical
   // Voice name introduced with the gpt-realtime GA release. If session
   // creation fails, this is the first thing to check against current
   // OpenAI docs — it's the field most likely to have moved.
