@@ -2,16 +2,42 @@
 
 ## Delivery Destination
 
-The iPad never saves the result to its own Photos library or Files app —
-the device is shared across guests and must not accumulate guest content.
-Two delivery paths, both guest-device-targeted:
+**Revised (supersedes the original "no on-device retention" stance
+below):** every generated image is now automatically saved to the
+operating device the moment generation completes, so the guest leaves
+with their image without depending on QR/network reliability. This is a
+deliberate product decision, not an oversight — see "Why this changed"
+below. QR/share delivery to the guest's own phone remains available as a
+secondary option.
 
-1. **QR code (primary)** — guest scans with their own phone, opens the
-   delivery artifact directly on their device.
-2. **Native share sheet (secondary, on-device fallback)** — Web Share API
-   triggered by a guest tap, offering AirDrop / Messages / any installed
-   app as the target. Still guest-initiated, still leaves no copy on the
-   iPad.
+Concretely:
+
+1. **Automatic on-device save (primary)** — as soon as `gpt-image-1.5`
+   returns the generated image, the app triggers a browser download of
+   it. On iOS Safari this lands in Files/Downloads; the web platform does
+   not allow a page to silently write into the Photos library without a
+   user-mediated interaction, so this is the closest to "automatic" that
+   iOS permits without asking the guest to do anything.
+2. **Manual "Spara bild" tap (secondary, guest-controlled)** — because
+   this has a live user gesture, it can invoke the native share sheet
+   (`navigator.share`), which does offer "Save to Photos" as a one-tap
+   destination. This is the path to actually get the image into Photos,
+   not just Files.
+3. **QR code / guest's own phone** — still the recommended path when the
+   photo should end up on the guest's *own* device, not the shared iPad.
+
+### Why this changed
+
+The original reasoning (a shared device must not accumulate guest
+content) still holds as a privacy concern — it hasn't gone away, it's
+just been outweighed for this phase by wanting a guaranteed take-home
+result that doesn't depend on the guest scanning a QR code correctly
+before walking away. This trades privacy-by-default for delivery
+reliability. **Recommended mitigation, not yet implemented as a hard
+requirement:** add a step to `add-key-lifecycle`'s post-session/
+post-event checklist to clear saved photos from the device between
+events. This is worth a deliberate decision (and probably a dedicated
+checklist item), not something the app should paper over.
 
 ## Delivery Artifact TTL
 

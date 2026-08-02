@@ -26,11 +26,25 @@ No backend service exists in this phase. Every arrow above terminates
 either on-device or at the third-party provider directly.
 
 **Implementation status**: the Voice Module is implemented in
-`docs/app.js` (`gpt-realtime-mini`, WebRTC, push-to-talk), scoped to the
-greeting + scene-discovery conversation. Capture/review/result status
-lines remain on local device text-to-speech rather than staying connected
-to Realtime for the whole session, to bound per-guest cost. See
-`docs/README.md` for known integration caveats.
+`docs/app.js` using the flagship `gpt-realtime` model (WebRTC,
+push-to-talk). The session now stays open for the entire guest journey —
+greeting, scene discovery, capture confirmation, and the post-result
+decision (save/retry/finish) — via three tools (`set_scene`,
+`confirm_capture`, `result_action`), not just the initial scene
+conversation. Local device text-to-speech is now a fallback only (demo
+mode / failed connection), not a cost-bounding measure for later stages —
+that earlier scoping decision was superseded when full-journey voice was
+requested. The booth orb is audio-reactive: a Web Audio analyser tapped
+onto the live Realtime audio stream (analysis-only, not wired into
+playback, so a failure there never silences VIBE) drives the orb's
+scale/glow in real time while VIBE is actually speaking. Generated images
+are auto-saved to the device on completion (see
+`add-delivery-and-ownership` DELIV-FR-004 — this supersedes that change's
+original "no on-device retention" stance). Image generation uses
+`gpt-image-1.5` (the flagship successor; `gpt-image-1` retires
+2026-10-23). See `docs/README.md` for known integration caveats — none of
+the OpenAI wire-format details here have been verified against a live key
+from this environment.
 
 ## 2. Why Client-Only (and what it costs)
 

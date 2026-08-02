@@ -37,12 +37,39 @@ video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .scanline { position: absolute; inset: 0; border: 2px solid rgba(247,223,30,.6); border-radius: 28px; pointer-events: none; }
 .camera-message { position: absolute; left: 12px; right: 12px; bottom: 12px; background: rgba(0,0,0,.7); padding: 10px; border-radius: 12px; text-align: center; }
 .countdown { position: absolute; inset: 0; display: grid; place-items: center; font-size: 8rem; font-weight: 900; text-shadow: 0 4px 18px #000; }
-.conversation { display: grid; grid-template-columns: 58px 1fr; gap: 12px; align-items: center; margin: 16px 0; }
-.conversation p { margin: 3px 0; font-size: 1.08rem; }
 .speaker { font-size: .78rem; letter-spacing: .15em; color: var(--accent); }
-.orb { width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff 0 5%, var(--accent) 6% 24%, var(--accent2) 55%, #5423ff 100%); animation: pulse 2s ease-in-out infinite; }
+.orb {
+  width: 54px; height: 54px; border-radius: 50%; flex: 0 0 auto;
+  background: radial-gradient(circle at 35% 35%, #fff 0 5%, var(--accent) 6% 24%, var(--accent2) 55%, #5423ff 100%);
+  animation: pulse 2s ease-in-out infinite;
+  transition: transform 70ms linear, box-shadow 70ms linear, filter 70ms linear;
+}
 .orb.compact { width: 42px; height: 42px; }
 @keyframes pulse { 50% { transform: scale(1.08); filter: brightness(1.2); } }
+
+/* Reactive states driven by app.js (Web Audio analyser on the live Realtime
+   voice stream) via the --level custom property, 0..1. */
+.orb.listening { animation: none; box-shadow: 0 0 0 3px rgba(247,223,30,.5); }
+.orb.speaking {
+  animation: none;
+  transform: scale(calc(1 + var(--level, 0) * 0.55));
+  filter: brightness(calc(1 + var(--level, 0) * 0.6));
+  box-shadow: 0 0 calc(14px + var(--level, 0) * 46px) var(--accent2);
+}
+
+.voice-hud {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  display: flex; gap: 14px; align-items: center;
+  background: rgba(8,8,8,.88); backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+  padding: 14px 18px calc(env(safe-area-inset-bottom) + 14px);
+}
+.voice-hud-body { flex: 1; min-width: 0; }
+.voice-hud-body p { margin: 2px 0 10px; font-size: 1rem; line-height: 1.4; min-height: 1.4em; }
+.voice-hud-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+.voice-hud-controls button { width: auto; min-height: 44px; margin: 0; }
+.voice-hud-controls .primary { flex: 1; min-width: 160px; }
+body:has(#voiceHud:not([hidden])) .screen { padding-bottom: 200px; }
 .controls button { width: 100%; }
 .panel { max-width: 720px; margin: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 24px; padding: 20px; }
 .choice-grid { display: grid; gap: 10px; }

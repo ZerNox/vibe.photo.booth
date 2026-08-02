@@ -3,10 +3,11 @@
   "use strict";
 
   const SPEECH_LANG = "sv-SE";
-  const REALTIME_MODEL = "gpt-realtime-mini";
+  const REALTIME_MODEL = "gpt-realtime"; // flagship voice model
+  const IMAGE_MODEL = "gpt-image-1.5"; // gpt-image-1 retires 2026-10-23; using the flagship successor
   // Voice name introduced with the gpt-realtime GA release. If session
   // creation fails, this is the first thing to check against current
-  // OpenAI docs — it's the one field most likely to have moved.
+  // OpenAI docs — it's the field most likely to have moved.
   const REALTIME_VOICE = "marin";
 
   const SET_SCENE_TOOL = {
@@ -20,18 +21,56 @@
         treatment: {
           type: "string",
           enum: ["contextual", "custom", "none"],
-          description: "'contextual' = VIBE väljer kläder, rekvisita och detaljer fritt. 'custom' = endast det gästen uttryckligen anger. 'none' = personerna ska inte ändras alls, bara miljön."
+          description: "'contextual' = du väljer kläder, rekvisita och detaljer fritt. 'custom' = endast det gästen uttryckligen anger. 'none' = personerna ska inte ändras alls, bara miljön."
         },
-        custom_instructions: { type: "string", description: "Endast om treatment är 'custom': exakt vad VIBE får ändra." }
+        custom_instructions: { type: "string", description: "Endast om treatment är 'custom': exakt vad du får ändra." }
       },
       required: ["scene", "treatment"]
     }
   };
 
-  const SYSTEM_PROMPT = `
-Du är VIBE, värden för ett AI-fotobås på ett privat evenemang. Du pratar svenska, är varm, lekfull och kortfattad — max en till två meningar per svar.
+  const CONFIRM_CAPTURE_TOOL = {
+    type: "function",
+    name: "confirm_capture",
+    description: "Anropas när gästen svarar på om de är redo att fotograferas för den föreslagna scenen.",
+    parameters: {
+      type: "object",
+      properties: {
+        ready: { type: "boolean", description: "true om gästen vill ta bilden nu, false om de vill ändra scenen istället." }
+      },
+      required: ["ready"]
+    }
+  };
 
-Ditt enda mål just nu: ta reda på (1) vilken scen gästen vill bli fotograferad i, och (2) hur mycket scenen får påverka dem — bara miljön ("none"), miljö plus kläder/rekvisita som du väljer fritt ("contextual"), eller något specifikt gästen själv anger ("custom"). Ställ högst två korta följdfrågor. Så fort du vet båda sakerna, anropa funktionen set_scene — gissa inte, men dra inte ut på samtalet i onödan heller.
+  const RESULT_ACTION_TOOL = {
+    type: "function",
+    name: "result_action",
+    description: "Anropas efter att en bild har visats, baserat på vad gästen vill göra härnäst.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["save", "retry", "finish"],
+          description: "'save' = gästen är nöjd med bilden som den är (den sparas redan automatiskt). 'retry' = skapa en ny AI-version av samma foto. 'finish' = avsluta sessionen."
+        }
+      },
+      required: ["action"]
+    }
+  };
+
+  const ALL_TOOLS = [SET_SCENE_TOOL, CONFIRM_CAPTURE_TOOL, RESULT_ACTION_TOOL];
+
+  const SYSTEM_PROMPT = `
+Du är VIBE, värden för ett AI-fotobås på ett privat evenemang. Du pratar svenska, är varm, lekfull och kortfattad — max en till två meningar per svar. Hela upplevelsen sker via röst; gästen kan också använda skärmen parallellt, men du ska alltid driva samtalet proaktivt framåt.
+
+Samtalet har tre steg, i ordning:
+
+1. Scenval: ta reda på (a) vilken scen gästen vill bli fotograferad i, och (b) hur mycket scenen får påverka dem — bara miljön ("none"), miljö plus kläder/rekvisita du väljer fritt ("contextual"), eller något specifikt gästen själv anger ("custom"). Ställ högst två korta följdfrågor. Så fort du vet båda sakerna, anropa set_scene.
+
+2. Fotobekräftelse: när du blir ombedd att fråga om gästen är redo, fråga kort om de vill ta bilden nu eller ändra scenen. Anropa confirm_capture med ready=true respektive false utifrån svaret.
+
+3. Efter bilden: när du blir ombedd att fråga vad gästen vill göra härnäst, fråga om de vill spara bilden som den är, prova en ny variant, eller är klara. Anropa result_action med action satt till "save", "retry" eller "finish".
 
 Regler du aldrig bryter mot:
 - Kommentera aldrig någons kropp, vikt, ålder, etnicitet, religion, attraktivitet eller funktionsvariation.
@@ -74,6 +113,8 @@ Regler du aldrig bryter mot:
     speechSynthesis.addEventListener("voiceschanged", loadSwedishVoice);
   }
 
+  // Local device TTS — used only as a fallback when no live Realtime
+  // voice session exists (demo mode, or a failed connection).
   function speak(text) {
     $("vibeText").textContent = text;
     if (!("speechSynthesis" in window)) return;
@@ -140,7 +181,10 @@ Regler du aldrig bryter mot:
     const summary = buildSummary();
     $("sceneSummary").textContent = summary;
     show("review");
-    if ("speechSynthesis" in window) {
+    // If a live voice session is running, VIBE asks about capture
+    // readiness itself (see set_scene handling below) — only speak this
+    // locally when there is no live session to do it.
+    if (!state.rt && "speechSynthesis" in window) {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(summary + " Ska jag fortsätta?");
       u.lang = SPEECH_LANG;
@@ -149,7 +193,67 @@ Regler du aldrig bryter mot:
     }
   }
 
-  // ---- OpenAI Realtime (WebRTC) — live voice for greeting + scene discovery ----
+  // ---- OpenAI Realtime (WebRTC) — live voice for the whole guest journey ----
+
+  let audioCtx = null;
+  let analyser = null;
+  let orbRafId = null;
+
+  function startOrbReactivity(remoteStream) {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      audioCtx = new Ctx();
+      // Analysis-only tap: NOT connected to audioCtx.destination, so this
+      // can never affect or duplicate actual audio playback — that stays
+      // on the plain <audio autoplay> element regardless of what happens
+      // here. If anything below throws, the guest still hears VIBE fine.
+      const source = audioCtx.createMediaStreamSource(remoteStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.6;
+      source.connect(analyser);
+      audioCtx.resume().catch(() => { /* best effort */ });
+
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const orb = $("orb");
+      const loop = () => {
+        analyser.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const level = Math.min(1, (sum / data.length) / 90);
+        orb.style.setProperty("--level", level.toFixed(3));
+        orb.classList.toggle("speaking", level > 0.06);
+        orbRafId = requestAnimationFrame(loop);
+      };
+      loop();
+    } catch (err) {
+      console.warn("Orb-reaktivitet kunde inte startas (rösten spelas upp som vanligt).", err);
+    }
+  }
+
+  function stopOrbReactivity() {
+    if (orbRafId) cancelAnimationFrame(orbRafId);
+    orbRafId = null;
+    if (audioCtx) { try { audioCtx.close(); } catch { /* already closed */ } }
+    audioCtx = null;
+    analyser = null;
+    const orb = $("orb");
+    orb.classList.remove("speaking", "listening");
+    orb.style.removeProperty("--level");
+  }
+
+  function sendRt(evt) {
+    if (state.rt) state.rt.sendEvent(evt);
+  }
+
+  function injectContext(text) {
+    sendRt({
+      type: "conversation.item.create",
+      item: { type: "message", role: "system", content: [{ type: "input_text", text }] }
+    });
+    sendRt({ type: "response.create" });
+  }
 
   async function mintEphemeralToken(apiKey) {
     const resp = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
@@ -164,7 +268,7 @@ Regler du aldrig bryter mot:
           model: REALTIME_MODEL,
           instructions: SYSTEM_PROMPT,
           audio: { output: { voice: REALTIME_VOICE } },
-          tools: [SET_SCENE_TOOL],
+          tools: ALL_TOOLS,
           tool_choice: "auto"
         }
       })
@@ -189,8 +293,43 @@ Regler du aldrig bryter mot:
     if (treatment === "custom" && args.custom_instructions) {
       $("customPrompt").value = args.custom_instructions;
     }
-    disconnectRealtime();
     goToReview();
+  }
+
+  function handleConfirmCapture(args) {
+    if (args.ready) {
+      countdownAndCapture(); // announces itself + triggers its own response.create
+    } else {
+      show("scene");
+      sendRt({ type: "response.create" });
+    }
+  }
+
+  async function handleResultAction(args) {
+    if (args.action === "retry") {
+      await generateAI(); // announces itself + triggers its own response.create
+    } else if (args.action === "finish") {
+      resetGuest(); // ends the session; nothing further to say
+    } else {
+      sendRt({ type: "response.create" }); // "save": just prompt an acknowledgement
+    }
+  }
+
+  function handleToolCall(name, callId, argsJson) {
+    let args = {};
+    try { args = JSON.parse(argsJson || "{}"); } catch { /* leave args empty */ }
+    sendRt({
+      type: "conversation.item.create",
+      item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ ok: true }) }
+    });
+    if (name === "set_scene") {
+      applySceneFromVoice(args);
+      sendRt({ type: "response.create" });
+    } else if (name === "confirm_capture") {
+      handleConfirmCapture(args);
+    } else if (name === "result_action") {
+      handleResultAction(args);
+    }
   }
 
   async function connectRealtime() {
@@ -203,7 +342,10 @@ Regler du aldrig bryter mot:
     const pc = new RTCPeerConnection();
     const remoteAudio = new Audio();
     remoteAudio.autoplay = true;
-    pc.ontrack = (e) => { remoteAudio.srcObject = e.streams[0]; };
+    pc.ontrack = (e) => {
+      remoteAudio.srcObject = e.streams[0];
+      startOrbReactivity(e.streams[0]);
+    };
 
     pc.addTrack(micTrack, state.stream);
     micTrack.enabled = false; // push-to-talk: muted until the guest taps to speak
@@ -216,16 +358,6 @@ Regler du aldrig bryter mot:
       if (dc.readyState === "open") dc.send(JSON.stringify(evt));
     }
 
-    function handleSetScene(callId, argsJson) {
-      let args = {};
-      try { args = JSON.parse(argsJson); } catch { /* leave args empty */ }
-      sendEvent({
-        type: "conversation.item.create",
-        item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ ok: true }) }
-      });
-      applySceneFromVoice(args);
-    }
-
     dc.addEventListener("open", () => {
       sendEvent({
         type: "session.update",
@@ -233,12 +365,12 @@ Regler du aldrig bryter mot:
           type: "realtime",
           instructions: SYSTEM_PROMPT,
           audio: { output: { voice: REALTIME_VOICE } },
-          tools: [SET_SCENE_TOOL],
+          tools: ALL_TOOLS,
           tool_choice: "auto",
           turn_detection: null
         }
       });
-      sendEvent({ type: "response.create" }); // let VIBE speak first
+      sendEvent({ type: "response.create" }); // let VIBE greet first
     });
 
     dc.addEventListener("message", (e) => {
@@ -256,11 +388,11 @@ Regler du aldrig bryter mot:
       if (evt.type === "response.function_call_arguments.delta" && evt.call_id) {
         toolCallBuffers[evt.call_id] = (toolCallBuffers[evt.call_id] || "") + (evt.delta || "");
       }
-      if (evt.type === "response.function_call_arguments.done" && evt.name === "set_scene") {
-        handleSetScene(evt.call_id, evt.arguments || toolCallBuffers[evt.call_id] || "{}");
+      if (evt.type === "response.function_call_arguments.done" && evt.name) {
+        handleToolCall(evt.name, evt.call_id, evt.arguments || toolCallBuffers[evt.call_id] || "{}");
       }
-      if (evt.type === "response.output_item.done" && evt.item && evt.item.type === "function_call" && evt.item.name === "set_scene") {
-        handleSetScene(evt.item.call_id, evt.item.arguments || "{}");
+      if (evt.type === "response.output_item.done" && evt.item && evt.item.type === "function_call") {
+        handleToolCall(evt.item.name, evt.item.call_id, evt.item.arguments || "{}");
       }
       if (evt.type === "error") {
         console.error("[VIBE realtime error]", evt.error || evt);
@@ -296,27 +428,32 @@ Regler du aldrig bryter mot:
     if (state.rt.micTrack) state.rt.micTrack.enabled = true;
     state.rt = null;
     state.talking = false;
+    stopOrbReactivity();
     $("talkButton").hidden = true;
     $("talkButton").textContent = "🎙 Tryck och prata";
     $("skipVoiceButton").hidden = true;
     $("beginButton").hidden = false;
   }
 
-  // ---- Capture / generation (unchanged from local-only flow) ----
+  // ---- Capture / generation ----
 
   async function countdownAndCapture() {
     show("booth");
-    speak("Mänsklig uppställning godkänd. Fotografering om tre, två, ett.");
+    if (state.rt) {
+      injectContext("Gästen är redo. Säg mycket kort att du tar kortet om tre sekunder, sedan är du tyst tills vidare.");
+    } else {
+      speak("Mänsklig uppställning godkänd. Fotografering om tre, två, ett.");
+    }
     const countdown = $("countdown");
     for (const n of [3, 2, 1]) {
       countdown.textContent = n;
       await new Promise(r => setTimeout(r, 850));
     }
     countdown.textContent = "";
-    captureFrame();
+    await captureFrame();
   }
 
-  function captureFrame() {
+  async function captureFrame() {
     const video = $("video");
     if (!video.videoWidth) {
       alert("Kameran är inte redo.");
@@ -347,14 +484,49 @@ Regler du aldrig bryter mot:
     ctx.textAlign = "left";
 
     canvas.toBlob(blob => state.capturedBlob = blob, "image/jpeg", .9);
-    const resultText = "Fotografiskt bevis säkrat. Verklighetsomvandling redo.";
-    $("resultMessage").textContent = resultText;
     show("result");
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(resultText);
-    u.lang = SPEECH_LANG;
-    if (swedishVoice) u.voice = swedishVoice;
-    speechSynthesis.speak(u);
+
+    if (state.rt) {
+      $("resultMessage").textContent = "Fotot är taget.";
+      injectContext("Fotot har precis tagits. Säg mycket kort att du nu skapar bildomvandlingen.");
+    } else {
+      const resultText = "Fotografiskt bevis säkrat. Verklighetsomvandling redo.";
+      $("resultMessage").textContent = resultText;
+      speak(resultText);
+    }
+
+    if (state.apiKey && !state.demo) {
+      await generateAI();
+    }
+  }
+
+  function downloadImage() {
+    const canvas = $("resultCanvas");
+    const link = document.createElement("a");
+    link.download = `vibe-foto-${Date.now()}.jpg`;
+    link.href = canvas.toDataURL("image/jpeg", .92);
+    link.click();
+  }
+
+  // Manual "Spara bild" tap — has a live user gesture, so it can try the
+  // native share sheet (AirDrop / Save to Photos / etc). The automatic
+  // post-generation save below cannot reliably use share() (no fresh
+  // gesture after an async network call on iOS), so it always just
+  // downloads — see docs/README.md for the platform limitation.
+  async function shareOrDownloadImage() {
+    const canvas = $("resultCanvas");
+    const filename = `vibe-foto-${Date.now()}.jpg`;
+    try {
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .92));
+      const file = new File([blob], filename, { type: "image/jpeg" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "VIBE Fotobås" });
+        return;
+      }
+    } catch (err) {
+      console.warn("Delning avbröts eller misslyckades, laddar ner istället.", err);
+    }
+    downloadImage();
   }
 
   async function generateAI() {
@@ -384,7 +556,7 @@ Regler du aldrig bryter mot:
 
     try {
       const form = new FormData();
-      form.append("model", "gpt-image-1");
+      form.append("model", IMAGE_MODEL);
       form.append("prompt", prompt);
       form.append("image", state.capturedBlob, "capture.jpg");
       form.append("size", "1024x1024");
@@ -410,13 +582,22 @@ Regler du aldrig bryter mot:
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         canvas.getContext("2d").drawImage(img, 0, 0);
-        $("resultMessage").textContent = "Omvandling klar. Syntetiskt mästerverk verifierat.";
+        $("resultMessage").textContent = "Omvandling klar. Sparas automatiskt på enheten.";
+        downloadImage();
+        if (state.rt) {
+          injectContext("Bilden är klar och har sparats automatiskt på enheten. Fråga kort om gästen vill spara den som den är, prova en ny variant, eller är klara.");
+        }
       };
       img.src = `data:image/png;base64,${b64}`;
     } catch (error) {
       console.error(error);
-      $("resultMessage").textContent = "Direktgenerering i webbläsaren misslyckades. Detta kan bero på webbläsarens API-begränsningar; kamera- och samtalsprototypen fungerar fortfarande.";
-      alert(error.message);
+      const msg = "Direktgenerering i webbläsaren misslyckades. Detta kan bero på webbläsarens API-begränsningar; kamera- och samtalsprototypen fungerar fortfarande.";
+      $("resultMessage").textContent = msg;
+      if (state.rt) {
+        injectContext("Bildomvandlingen misslyckades tekniskt. Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.");
+      } else {
+        alert(error.message);
+      }
     } finally {
       $("generateButton").disabled = false;
       $("generateButton").textContent = "Generera AI-version";
@@ -460,6 +641,7 @@ Regler du aldrig bryter mot:
     state.demo = !state.apiKey;
     state.eventName = $("eventName").value.trim() || "VIBE Testsession";
     $("apiKey").value = "";
+    $("voiceHud").hidden = false;
     show("booth");
     await startCamera();
   });
@@ -467,6 +649,7 @@ Regler du aldrig bryter mot:
   $("demoButton").addEventListener("click", async () => {
     state.apiKey = "";
     state.demo = true;
+    $("voiceHud").hidden = false;
     show("booth");
     await startCamera();
   });
@@ -498,6 +681,7 @@ Regler du aldrig bryter mot:
     if (!state.rt) return;
     state.talking = !state.talking;
     state.rt.micTrack.enabled = state.talking;
+    $("orb").classList.toggle("listening", state.talking);
     if (state.talking) {
       $("talkButton").textContent = "🎙 Tryck för att skicka";
       $("vibeText").textContent = "Lyssnar…";
@@ -527,13 +711,7 @@ Regler du aldrig bryter mot:
   $("reviewButton").addEventListener("click", goToReview);
   $("editButton").addEventListener("click", () => show("scene"));
   $("captureButton").addEventListener("click", countdownAndCapture);
-  $("downloadButton").addEventListener("click", () => {
-    const canvas = $("resultCanvas");
-    const link = document.createElement("a");
-    link.download = `vibe-foto-${Date.now()}.jpg`;
-    link.href = canvas.toDataURL("image/jpeg", .92);
-    link.click();
-  });
+  $("downloadButton").addEventListener("click", shareOrDownloadImage);
   $("generateButton").addEventListener("click", generateAI);
 
   document.querySelectorAll(".homeButton").forEach(b => b.addEventListener("click", resetGuest));
