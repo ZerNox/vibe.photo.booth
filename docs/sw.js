@@ -1,5 +1,8 @@
-
-const CACHE = "vibe-photo-booth-v5";
+// Cache-first fetch below means nobody gets updated app.js/index.html
+// until this string changes. .github/workflows/stamp-deploy-version.yml
+// rewrites it to the deploy commit's SHA on every push to main, so this
+// literal value only matters for local/manual testing.
+const CACHE = "vibe-photo-booth-v6";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
