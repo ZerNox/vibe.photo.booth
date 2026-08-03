@@ -1040,12 +1040,23 @@ Regler du aldrig bryter mot:
   // A `no-cors` request sidesteps CORS entirely: it still succeeds
   // (opaquely) as long as the request physically reaches the server, even
   // if that server would refuse to let a normal cors-mode request read the
-  // response. So retrying the same URL in no-cors mode tells them apart —
-  // if THIS succeeds where the real request just threw, the real failure
-  // was a CORS policy block, not a network problem.
-  async function probeCorsBlock(url) {
+  // response. So firing one tells the two apart — if THIS succeeds where
+  // the real request just threw, the real failure was a CORS policy
+  // block, not a network problem.
+  //
+  // Deliberately probes a plain GET to a stable, non-upload endpoint
+  // (`/v1/models`) rather than re-POSTing to the exact URL that just
+  // failed: a GET is always a CORS-"simple" request with no body to parse,
+  // so it can't trip an upload endpoint's own WAF/body-validation quirks
+  // (e.g. rejecting a bodyless probe POST to a file-upload route with a
+  // connection reset instead of a clean HTTP status) — which would
+  // misreport a same-endpoint CORS block as "no network" instead. This
+  // only proves api.openai.com in general is reachable, not that the
+  // specific failing endpoint would have answered; that's the best a
+  // browser can determine without a server-side proxy.
+  async function probeApiDomainReachable() {
     try {
-      await fetch(url, { method: "POST", mode: "no-cors" });
+      await fetch("https://api.openai.com/v1/models", { method: "GET", mode: "no-cors" });
       return true;
     } catch {
       return false;
@@ -1119,18 +1130,39 @@ Regler du aldrig bryter mot:
       // has no built-in deadline, so one has to be imposed here. 3 minutes
       // (up from an earlier 2) gives gpt-image-2's occasional long tail at
       // "high" quality more room before being treated as a hang.
-      const timeoutController = new AbortController();
-      const timeoutId = setTimeout(() => timeoutController.abort(), 180000);
+      //
+      // A dropped wifi/mobile-data blip that never reaches OpenAI's server
+      // is often gone a second later, so per openspec's failure-recovery
+      // design (transient network error: retry silently, up to 2 attempts)
+      // that specific case gets two silent retries before it's surfaced to
+      // the guest as an error. A CORS block fails identically every retry,
+      // so it's excluded via the same probe used to word the final error
+      // message, and a timeout/abort is never retried (already waited 3
+      // minutes once).
+      const MAX_TRANSIENT_NETWORK_RETRIES = 2;
       let response;
-      try {
-        response = await fetch("https://api.openai.com/v1/images/edits", {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${state.apiKey}` },
-          body: form,
-          signal: timeoutController.signal
-        });
-      } finally {
-        clearTimeout(timeoutId);
+      let transientNetworkRetries = 0;
+      for (;;) {
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => timeoutController.abort(), 180000);
+        try {
+          response = await fetch("https://api.openai.com/v1/images/edits", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${state.apiKey}` },
+            body: form,
+            signal: timeoutController.signal
+          });
+          break;
+        } catch (fetchError) {
+          const canRetry = fetchError instanceof TypeError
+            && transientNetworkRetries < MAX_TRANSIENT_NETWORK_RETRIES
+            && !(await probeApiDomainReachable());
+          if (!canRetry) throw fetchError;
+          transientNetworkRetries++;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } finally {
+          clearTimeout(timeoutId);
+        }
       }
 
       if (!response.ok) {
@@ -1172,10 +1204,10 @@ Regler du aldrig bryter mot:
         // status-specific description (describeImageApiError above) and is
         // shown as-is — this branch is only for the opaque case where
         // fetch() itself rejected before any HTTP response existed.
-        const reachedServer = await probeCorsBlock("https://api.openai.com/v1/images/edits");
+        const reachedServer = await probeApiDomainReachable();
         detail = reachedServer
-          ? "Webbläsarens CORS-policy blockerar direkta bild-API-anrop till OpenAI — bekräftat via testanrop (nätverket når fram, men svaret nekas). Känd begränsning, se docs/README.md: kräver en serverlös gateway för att lösa permanent."
-          : "Nätverksfel — begäran nådde aldrig OpenAI (bekräftat via testanrop). Kontrollera wifi/mobildata och försök igen.";
+          ? "Webbläsarens CORS-policy blockerar troligen direkta bild-API-anrop till OpenAI (till skillnad från röst-API:et, som är byggt för webbläsaranrop, stödjer bild-redigerings-endpointen sannolikt inte det) — bekräftat via testanrop att api.openai.com i övrigt går att nå. Känd begränsning, se docs/README.md: kräver en serverlös gateway för att lösa permanent."
+          : "Nätverksfel — kunde inte nå api.openai.com alls (bekräftat via testanrop mot en annan endpoint). Kontrollera wifi/mobildata och försök igen.";
       } else {
         detail = error.message;
       }
