@@ -136,7 +136,8 @@ Regler du aldrig bryter mot:
     speaking: false,
     rt: null,
     lastVoiceError: null,
-    lastImageError: null
+    lastImageError: null,
+    micEnabledBeforeGeneration: null
   };
 
   const $ = (id) => document.getElementById(id);
@@ -1079,12 +1080,32 @@ Regler du aldrig bryter mot:
     return new Promise(resolve => small.toBlob(resolve, "image/jpeg", .85));
   }
 
+  // The image edit call can take up to a minute — the guest doesn't need to
+  // be heard (and server_vad barge-in could otherwise interrupt VIBE's own
+  // "generating…" line) while it's in flight, so the mic is held silent for
+  // the duration and restored to whatever state it was actually in
+  // (respects a guest who had already self-muted via muteButton).
+  function pauseMicForGeneration() {
+    if (!state.rt || !state.rt.micTrack) return;
+    state.micEnabledBeforeGeneration = state.rt.micTrack.enabled;
+    state.rt.micTrack.enabled = false;
+    $("orb").classList.remove("listening");
+  }
+
+  function resumeMicAfterGeneration() {
+    if (!state.rt || !state.rt.micTrack) return;
+    if (state.micEnabledBeforeGeneration === null) return;
+    state.rt.micTrack.enabled = state.micEnabledBeforeGeneration;
+    state.micEnabledBeforeGeneration = null;
+  }
+
   async function generateAI() {
     if (!state.capturedBlob) {
       alert("Ta ett foto först.");
       return;
     }
 
+    pauseMicForGeneration();
     $("generateButton").disabled = true;
     $("generateButton").textContent = "Omvandlar…";
     startGenerationQuips();
@@ -1177,6 +1198,7 @@ Regler du aldrig bryter mot:
 
       const img = new Image();
       img.onload = () => {
+        resumeMicAfterGeneration();
         stopGenerationQuips();
         const canvas = $("resultCanvas");
         canvas.width = img.naturalWidth;
@@ -1190,8 +1212,18 @@ Regler du aldrig bryter mot:
           injectContext("Bilden är klar och har sparats automatiskt på enheten. Fråga kort om gästen vill spara den som den är, prova en ny variant, eller är klara.");
         }
       };
+      img.onerror = () => {
+        resumeMicAfterGeneration();
+        stopGenerationQuips();
+        state.lastImageError = "OpenAI skickade en bild som inte gick att läsa in.";
+        $("resultMessage").textContent = "Bildgenerering misslyckades: bilden gick inte att läsa in. Kamera- och samtalsprototypen fungerar fortfarande.";
+        if (state.rt) {
+          injectContext("Bildomvandlingen misslyckades tekniskt (bilden gick inte att läsa in). Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.");
+        }
+      };
       img.src = `data:image/png;base64,${b64}`;
     } catch (error) {
+      resumeMicAfterGeneration();
       console.error(error);
       stopGenerationQuips();
       let detail;
