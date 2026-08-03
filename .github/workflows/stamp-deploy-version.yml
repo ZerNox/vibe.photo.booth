@@ -31,10 +31,18 @@ jobs:
           }
           EOF
 
+      - name: Bump service worker cache name
+        # docs/sw.js is cache-first: nobody gets updated assets until this
+        # string changes, so tie it to the commit instead of relying on a
+        # manual bump in the app change itself (see the bug where the demo
+        # button kept appearing after being removed from app.js).
+        run: |
+          sed -i "s/^const CACHE = .*/const CACHE = \"vibe-photo-booth-${GITHUB_SHA::7}\";/" docs/sw.js
+
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/version.json
+          git add docs/version.json docs/sw.js
           git diff --staged --quiet || git commit -m "Stamp deploy version [skip ci]"
           git push
