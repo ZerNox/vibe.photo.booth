@@ -5,7 +5,14 @@
   const SPEECH_LANG = "sv-SE";
   const REALTIME_MODEL = "gpt-realtime-2.1"; // flagship voice model — lower latency + GPT-5-class reasoning vs plain gpt-realtime
   const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
-  const IMAGE_QUALITY = "high"; // low/medium/high — frontier quality is a confirmed product priority over cost
+  const IMAGE_QUALITY = "medium"; // low/medium/high — traded down from "high" for noticeably faster generation at a live event
+  // Hard deadline for the images/edits fetch — fetch() has no built-in one,
+  // so a stalled/dropped connection would otherwise leave the button stuck
+  // on "Omvandlar…" forever with no error ever shown. Shortened from an
+  // earlier 3 minutes: at "medium" quality a real success lands well under
+  // this, so a guest at a live event hits a clear error and can retry
+  // instead of staring at a spinner for minutes.
+  const IMAGE_GENERATION_TIMEOUT_MS = 60000;
   const BEST_SHOT_MODEL = "gpt-5.1"; // vision-capable chat model used to pick the best of the countdown burst shots
   const COUNTDOWN_START = 10;
   const CAPTURE_AT_OR_ABOVE = 7; // shots are taken while the on-screen number is 7, 8, 9 or 10
@@ -139,7 +146,14 @@ Regler du aldrig bryter mot:
     lastImageError: null,
     micEnabledBeforeGeneration: null,
     imageGenerationLog: [],
-    imageGenerationSeq: 0
+    imageGenerationSeq: 0,
+    // True once an AI version has successfully been drawn onto resultCanvas
+    // for the *current* photo. A later retry can fail without touching the
+    // canvas at all (only a successful img.onload redraws it), so this is
+    // what tells the failure handler whether resultCanvas still shows that
+    // earlier success (needs a "the old one is still fine" message) or
+    // never got one (a real "nothing worked" failure).
+    hasGeneratedImage: false
   };
 
   // Full step-by-step trace of every generateAI() attempt — the short
@@ -995,6 +1009,7 @@ Regler du aldrig bryter mot:
     // (bigger canvas = slower encode) and bails out with the "take a photo
     // first" alert even though a photo was just taken.
     state.capturedBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .9));
+    state.hasGeneratedImage = false; // fresh capture — resultCanvas is the raw photo, not an AI version yet
     show("result");
 
     $("resultMessage").textContent = "Fotot är taget — AI valde den bästa av flera bilder.";
@@ -1170,26 +1185,20 @@ Regler du aldrig bryter mot:
       // rejects the input_fidelity param outright (400) if it's sent —
       // unlike gpt-image-1.5, there's nothing to opt into here.
 
-      // Without a timeout, a stalled/dropped connection leaves the button
-      // stuck on "Omvandlar…" forever with no error ever shown — fetch()
-      // has no built-in deadline, so one has to be imposed here. 3 minutes
-      // (up from an earlier 2) gives gpt-image-2's occasional long tail at
-      // "high" quality more room before being treated as a hang.
-      //
       // A dropped wifi/mobile-data blip that never reaches OpenAI's server
       // is often gone a second later, so per openspec's failure-recovery
       // design (transient network error: retry silently, up to 2 attempts)
       // that specific case gets two silent retries before it's surfaced to
       // the guest as an error. A CORS block fails identically every retry,
       // so it's excluded via the same probe used to word the final error
-      // message, and a timeout/abort is never retried (already waited 3
-      // minutes once).
+      // message, and a timeout/abort is never retried (already waited out
+      // IMAGE_GENERATION_TIMEOUT_MS once).
       const MAX_TRANSIENT_NETWORK_RETRIES = 2;
       let response;
       let transientNetworkRetries = 0;
       for (;;) {
         const timeoutController = new AbortController();
-        const timeoutId = setTimeout(() => timeoutController.abort(), 180000);
+        const timeoutId = setTimeout(() => timeoutController.abort(), IMAGE_GENERATION_TIMEOUT_MS);
         const attemptStart = performance.now();
         logImageGen(`#${genId} Fetch-försök ${transientNetworkRetries + 1}/${MAX_TRANSIENT_NETWORK_RETRIES + 1}…`);
         try {
@@ -1204,8 +1213,9 @@ Regler du aldrig bryter mot:
         } catch (fetchError) {
           // Only probe (an extra network round-trip) when it can actually
           // change the outcome — never on an AbortError (timeout already
-          // waited 3 minutes; no point adding more delay) or once retries
-          // are exhausted, matching the original short-circuited condition.
+          // waited out IMAGE_GENERATION_TIMEOUT_MS; no point adding more
+          // delay) or once retries are exhausted, matching the original
+          // short-circuited condition.
           let reachable = null;
           if (fetchError instanceof TypeError && transientNetworkRetries < MAX_TRANSIENT_NETWORK_RETRIES) {
             reachable = await probeApiDomainReachable();
@@ -1250,6 +1260,7 @@ Regler du aldrig bryter mot:
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         canvas.getContext("2d").drawImage(img, 0, 0);
+        state.hasGeneratedImage = true;
         $("resultMessage").textContent = "Omvandling klar. Sparas automatiskt på enheten.";
         downloadImage();
         playFanfare();
@@ -1263,9 +1274,14 @@ Regler du aldrig bryter mot:
         stopGenerationQuips();
         logImageGen(`#${genId} FEL: bilden kunde inte avkodas av <img>.`);
         state.lastImageError = "OpenAI skickade en bild som inte gick att läsa in.";
-        $("resultMessage").textContent = "Bildgenerering misslyckades: bilden gick inte att läsa in. Kamera- och samtalsprototypen fungerar fortfarande.";
+        $("resultMessage").textContent = state.hasGeneratedImage
+          ? "Kunde inte skapa en ny variant: bilden gick inte att läsa in. Den tidigare bilden ovan är kvar och redan sparad."
+          : "Bildgenerering misslyckades: bilden gick inte att läsa in. Kamera- och samtalsprototypen fungerar fortfarande.";
         if (state.rt) {
-          injectContext("Bildomvandlingen misslyckades tekniskt (bilden gick inte att läsa in). Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.");
+          const line = state.hasGeneratedImage
+            ? "Den nya varianten misslyckades tekniskt (bilden gick inte att läsa in), men den tidigare bilden finns redan sparad."
+            : "Bildomvandlingen misslyckades tekniskt (bilden gick inte att läsa in).";
+          injectContext(`${line} Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.`);
         }
       };
       img.src = `data:image/png;base64,${b64}`;
@@ -1275,9 +1291,10 @@ Regler du aldrig bryter mot:
       stopGenerationQuips();
       let detail;
       if (error.name === "AbortError") {
+        const timeoutSeconds = Math.round(IMAGE_GENERATION_TIMEOUT_MS / 1000);
         detail = wentHiddenDuringRequest
-          ? "Bildgenereringen avbröts efter för lång tid (över 3 minuter) — skärmen/fliken gick i bakgrunden under väntan, vilket kan pausa förfrågan på iOS. Håll skärmen aktiv (inaktivera automatisk låsning, se docs/README.md) och försök igen."
-          : "Bildgenereringen tog för lång tid (över 3 minuter) och avbröts. Försök igen.";
+          ? `Bildgenereringen avbröts efter för lång tid (över ${timeoutSeconds} sekunder) — skärmen/fliken gick i bakgrunden under väntan, vilket kan pausa förfrågan på iOS. Håll skärmen aktiv (inaktivera automatisk låsning, se docs/README.md) och försök igen.`
+          : `Bildgenereringen tog för lång tid (över ${timeoutSeconds} sekunder) och avbröts. Försök igen.`;
       } else if (error instanceof TypeError) {
         // Anything else already carries OpenAI's real status code + a
         // status-specific description (describeImageApiError above) and is
@@ -1292,9 +1309,19 @@ Regler du aldrig bryter mot:
       }
       logImageGen(`#${genId} FEL, klassificerad som: "${detail}" — rått fel: ${error.name || "Error"}: ${(error.message || "").slice(0, 300)}. Flik dold under väntan? ${wentHiddenDuringRequest}.${error.stack ? ` Stack: ${error.stack.split("\n").slice(0, 3).join(" | ")}` : ""}`);
       state.lastImageError = `${detail} [${error.name || "Error"}: ${(error.message || "").slice(0, 200)}]`;
-      $("resultMessage").textContent = `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
+      // A retry (as opposed to the first attempt for this photo) fails
+      // without ever touching resultCanvas, so the guest still sees the
+      // earlier successful AI image sitting right above this message — a
+      // flat "misslyckades ... prototypen fungerar fortfarande" reads as
+      // if nothing worked at all, which is actively misleading here.
+      $("resultMessage").textContent = state.hasGeneratedImage
+        ? `Kunde inte skapa en ny variant: ${detail} Den tidigare bilden ovan är kvar och redan sparad.`
+        : `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
       if (state.rt) {
-        injectContext(`Bildomvandlingen misslyckades tekniskt (${detail}). Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.`);
+        const line = state.hasGeneratedImage
+          ? `Den nya varianten misslyckades tekniskt (${detail}), men den tidigare bilden finns redan sparad`
+          : `Bildomvandlingen misslyckades tekniskt (${detail})`;
+        injectContext(`${line}. Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.`);
       } else {
         alert(detail);
       }
@@ -1329,6 +1356,7 @@ Regler du aldrig bryter mot:
     disconnectRealtime();
     stopGenerationQuips();
     state.capturedBlob = null;
+    state.hasGeneratedImage = false;
     $("scenePrompt").value = "Lekfull scen på ett franskt café";
     $("customPrompt").value = "";
     state.treatment = "contextual";
