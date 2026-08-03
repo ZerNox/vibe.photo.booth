@@ -6,6 +6,13 @@
   const REALTIME_MODEL = "gpt-realtime-2.1"; // flagship voice model — lower latency + GPT-5-class reasoning vs plain gpt-realtime
   const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
   const IMAGE_QUALITY = "medium"; // low/medium/high — traded down from "high" for noticeably faster generation at a live event
+  // Hard deadline for the images/edits fetch — fetch() has no built-in one,
+  // so a stalled/dropped connection would otherwise leave the button stuck
+  // on "Omvandlar…" forever with no error ever shown. Shortened from an
+  // earlier 3 minutes: at "medium" quality a real success lands well under
+  // this, so a guest at a live event hits a clear error and can retry
+  // instead of staring at a spinner for minutes.
+  const IMAGE_GENERATION_TIMEOUT_MS = 60000;
   const BEST_SHOT_MODEL = "gpt-5.1"; // vision-capable chat model used to pick the best of the countdown burst shots
   const COUNTDOWN_START = 10;
   const CAPTURE_AT_OR_ABOVE = 7; // shots are taken while the on-screen number is 7, 8, 9 or 10
@@ -1178,26 +1185,20 @@ Regler du aldrig bryter mot:
       // rejects the input_fidelity param outright (400) if it's sent —
       // unlike gpt-image-1.5, there's nothing to opt into here.
 
-      // Without a timeout, a stalled/dropped connection leaves the button
-      // stuck on "Omvandlar…" forever with no error ever shown — fetch()
-      // has no built-in deadline, so one has to be imposed here. 3 minutes
-      // (up from an earlier 2) gives gpt-image-2's occasional long tail at
-      // "high" quality more room before being treated as a hang.
-      //
       // A dropped wifi/mobile-data blip that never reaches OpenAI's server
       // is often gone a second later, so per openspec's failure-recovery
       // design (transient network error: retry silently, up to 2 attempts)
       // that specific case gets two silent retries before it's surfaced to
       // the guest as an error. A CORS block fails identically every retry,
       // so it's excluded via the same probe used to word the final error
-      // message, and a timeout/abort is never retried (already waited 3
-      // minutes once).
+      // message, and a timeout/abort is never retried (already waited out
+      // IMAGE_GENERATION_TIMEOUT_MS once).
       const MAX_TRANSIENT_NETWORK_RETRIES = 2;
       let response;
       let transientNetworkRetries = 0;
       for (;;) {
         const timeoutController = new AbortController();
-        const timeoutId = setTimeout(() => timeoutController.abort(), 180000);
+        const timeoutId = setTimeout(() => timeoutController.abort(), IMAGE_GENERATION_TIMEOUT_MS);
         const attemptStart = performance.now();
         logImageGen(`#${genId} Fetch-försök ${transientNetworkRetries + 1}/${MAX_TRANSIENT_NETWORK_RETRIES + 1}…`);
         try {
@@ -1212,8 +1213,9 @@ Regler du aldrig bryter mot:
         } catch (fetchError) {
           // Only probe (an extra network round-trip) when it can actually
           // change the outcome — never on an AbortError (timeout already
-          // waited 3 minutes; no point adding more delay) or once retries
-          // are exhausted, matching the original short-circuited condition.
+          // waited out IMAGE_GENERATION_TIMEOUT_MS; no point adding more
+          // delay) or once retries are exhausted, matching the original
+          // short-circuited condition.
           let reachable = null;
           if (fetchError instanceof TypeError && transientNetworkRetries < MAX_TRANSIENT_NETWORK_RETRIES) {
             reachable = await probeApiDomainReachable();
@@ -1289,9 +1291,10 @@ Regler du aldrig bryter mot:
       stopGenerationQuips();
       let detail;
       if (error.name === "AbortError") {
+        const timeoutSeconds = Math.round(IMAGE_GENERATION_TIMEOUT_MS / 1000);
         detail = wentHiddenDuringRequest
-          ? "Bildgenereringen avbröts efter för lång tid (över 3 minuter) — skärmen/fliken gick i bakgrunden under väntan, vilket kan pausa förfrågan på iOS. Håll skärmen aktiv (inaktivera automatisk låsning, se docs/README.md) och försök igen."
-          : "Bildgenereringen tog för lång tid (över 3 minuter) och avbröts. Försök igen.";
+          ? `Bildgenereringen avbröts efter för lång tid (över ${timeoutSeconds} sekunder) — skärmen/fliken gick i bakgrunden under väntan, vilket kan pausa förfrågan på iOS. Håll skärmen aktiv (inaktivera automatisk låsning, se docs/README.md) och försök igen.`
+          : `Bildgenereringen tog för lång tid (över ${timeoutSeconds} sekunder) och avbröts. Försök igen.`;
       } else if (error instanceof TypeError) {
         // Anything else already carries OpenAI's real status code + a
         // status-specific description (describeImageApiError above) and is
