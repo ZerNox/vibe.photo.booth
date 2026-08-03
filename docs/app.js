@@ -10,10 +10,31 @@
   const BEST_SHOT_MODEL = "gpt-5.1"; // vision-capable chat model used to pick the best of the countdown burst shots
   const COUNTDOWN_START = 10;
   const CAPTURE_AT_OR_ABOVE = 7; // shots are taken while the on-screen number is 7, 8, 9 or 10
-  // Voice name introduced with the gpt-realtime GA release. If session
-  // creation fails, this is the first thing to check against current
-  // OpenAI docs — it's the field most likely to have moved.
-  const REALTIME_VOICE = "marin";
+  // Voice name introduced with the gpt-realtime GA release. "cedar" is the
+  // male-sounding voice from that release (the female-sounding sibling is
+  // "marin"). If session creation fails, this is the first thing to check
+  // against current OpenAI docs — it's the field most likely to have moved.
+  const REALTIME_VOICE = "cedar";
+
+  // Hands-free listening: the guest never taps to talk. Threshold is
+  // biased up from the API default because this runs at a party (crowd
+  // noise, music) — server_vad still needs a real pause to end a turn.
+  // If false triggers/cut-offs show up in the field, semantic_vad is the
+  // documented alternative to try before hand-tuning these numbers further.
+  const REALTIME_TURN_DETECTION = {
+    type: "server_vad",
+    threshold: 0.6,
+    prefix_padding_ms: 300,
+    silence_duration_ms: 600,
+    create_response: true,
+    interrupt_response: true
+  };
+
+  // Best-effort accent instruction for the live Realtime voice — OpenAI's
+  // realtime voices don't expose a dialect *parameter*, so this leans on
+  // the model following a spoken-style instruction. Not guaranteed to be
+  // authentic.
+  const DIALECT_INSTRUCTION = "Uttalsstil: tala med en tydlig göteborgsk dialekt (uttal, melodi och ordval), men var fortfarande lätt att förstå.";
 
   const SET_SCENE_TOOL = {
     type: "function",
@@ -66,8 +87,8 @@
 
   const ALL_TOOLS = [SET_SCENE_TOOL, CONFIRM_CAPTURE_TOOL, RESULT_ACTION_TOOL];
 
-  const SYSTEM_PROMPT = `
-Du är VIBE, värden för ett AI-fotobås på ett privat evenemang. Du pratar svenska, är varm, lekfull och kortfattad — max en till två meningar per svar. Hela upplevelsen sker via röst; gästen kan också använda skärmen parallellt, men du ska alltid driva samtalet proaktivt framåt.
+  const SYSTEM_PROMPT_BASE = `
+Du är VIBE, värden för ett AI-fotobås på ett privat evenemang. Du pratar svenska, är varm, lekfull och kortfattad — max en till två meningar per svar. Hela upplevelsen sker via röst; mikrofonen lyssnar hela tiden så gästen aldrig behöver trycka på något för att prata, men gästen kan också använda skärmen parallellt om de vill. Du ska alltid driva samtalet proaktivt framåt.
 
 Samtalet har tre steg, i ordning:
 
@@ -85,6 +106,8 @@ Regler du aldrig bryter mot:
 - Prata bara om fotobåset, scenen och upplevelsen.
 `.trim();
 
+  const SYSTEM_PROMPT = `${SYSTEM_PROMPT_BASE}\n\n${DIALECT_INSTRUCTION}`;
+
   const state = {
     apiKey: "",
     demo: true,
@@ -93,8 +116,7 @@ Regler du aldrig bryter mot:
     capturedBlob: null,
     eventName: "VIBE Testsession",
     speaking: false,
-    rt: null,
-    talking: false
+    rt: null
   };
 
   const $ = (id) => document.getElementById(id);
@@ -274,7 +296,8 @@ Regler du aldrig bryter mot:
           instructions: SYSTEM_PROMPT,
           audio: { output: { voice: REALTIME_VOICE } },
           tools: ALL_TOOLS,
-          tool_choice: "auto"
+          tool_choice: "auto",
+          turn_detection: REALTIME_TURN_DETECTION
         }
       })
     });
@@ -353,7 +376,7 @@ Regler du aldrig bryter mot:
     };
 
     pc.addTrack(micTrack, state.stream);
-    micTrack.enabled = false; // push-to-talk: muted until the guest taps to speak
+    micTrack.enabled = true; // hands-free: mic is live from the start, no tap needed to talk
 
     const dc = pc.createDataChannel("oai-events");
     let liveCaption = "";
@@ -372,7 +395,7 @@ Regler du aldrig bryter mot:
           audio: { output: { voice: REALTIME_VOICE } },
           tools: ALL_TOOLS,
           tool_choice: "auto",
-          turn_detection: null
+          turn_detection: REALTIME_TURN_DETECTION
         }
       });
       sendEvent({ type: "response.create" }); // let VIBE greet first
@@ -398,6 +421,14 @@ Regler du aldrig bryter mot:
       }
       if (evt.type === "response.output_item.done" && evt.item && evt.item.type === "function_call") {
         handleToolCall(evt.item.name, evt.item.call_id, evt.item.arguments || "{}");
+      }
+      // Visual feedback only — server_vad drives the actual turn-taking.
+      if (evt.type === "input_audio_buffer.speech_started") {
+        $("orb").classList.add("listening");
+        $("vibeText").textContent = "Lyssnar…";
+      }
+      if (evt.type === "input_audio_buffer.speech_stopped" || evt.type === "input_audio_buffer.committed") {
+        $("orb").classList.remove("listening");
       }
       if (evt.type === "error") {
         console.error("[VIBE realtime error]", evt.error || evt);
@@ -432,10 +463,9 @@ Regler du aldrig bryter mot:
     try { state.rt.pc.close(); } catch { /* already closed */ }
     if (state.rt.micTrack) state.rt.micTrack.enabled = true;
     state.rt = null;
-    state.talking = false;
     stopOrbReactivity();
-    $("talkButton").hidden = true;
-    $("talkButton").textContent = "🎙 Tryck och prata";
+    $("muteButton").hidden = true;
+    $("muteButton").textContent = "🎙 Lyssnar hela tiden — tryck för att pausa";
     $("skipVoiceButton").hidden = true;
     $("beginButton").hidden = false;
   }
@@ -736,8 +766,13 @@ Regler du aldrig bryter mot:
       img.src = `data:image/png;base64,${b64}`;
     } catch (error) {
       console.error(error);
+      // A CORS block never reaches OpenAI's server, so fetch() rejects with
+      // a bare TypeError and no status code — that's the "browser blocked
+      // it" case documented in docs/README.md. Anything else here already
+      // carries OpenAI's real status code + a status-specific description
+      // (see describeImageApiError above) and should be shown as-is.
       const detail = error instanceof TypeError
-        ? "Nätverksfel: kunde inte nå OpenAI. Kontrollera internetanslutningen."
+        ? "Nätverksfel innan förfrågan nådde OpenAI — kontrollera internetanslutningen, eller så är det webbläsarens CORS-policy som blockerar direkta bild-API-anrop (känd begränsning, se docs/README.md)."
         : error.message;
       $("resultMessage").textContent = `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
       if (state.rt) {
@@ -813,7 +848,7 @@ Regler du aldrig bryter mot:
       state.rt = await connectRealtime();
       $("beginButton").hidden = true;
       $("beginButton").disabled = false;
-      $("talkButton").hidden = false;
+      $("muteButton").hidden = false;
       $("skipVoiceButton").hidden = false;
     } catch (error) {
       console.error(error);
@@ -824,19 +859,19 @@ Regler du aldrig bryter mot:
     }
   });
 
-  $("talkButton").addEventListener("click", () => {
+  // Mic is live continuously (server_vad drives turn-taking) — this is just
+  // a manual mute for a guest who wants to step away from the mic briefly.
+  $("muteButton").addEventListener("click", () => {
     if (!state.rt) return;
-    state.talking = !state.talking;
-    state.rt.micTrack.enabled = state.talking;
-    $("orb").classList.toggle("listening", state.talking);
-    if (state.talking) {
-      $("talkButton").textContent = "🎙 Tryck för att skicka";
-      $("vibeText").textContent = "Lyssnar…";
+    const muted = state.rt.micTrack.enabled;
+    state.rt.micTrack.enabled = !muted;
+    if (muted) {
+      $("muteButton").textContent = "🔇 Pausad — tryck för att lyssna igen";
+      $("orb").classList.remove("listening");
+      $("vibeText").textContent = "Mikrofonen är pausad.";
     } else {
-      $("talkButton").textContent = "🎙 Tryck och prata";
-      $("vibeText").textContent = "Tänker…";
-      state.rt.sendEvent({ type: "input_audio_buffer.commit" });
-      state.rt.sendEvent({ type: "response.create" });
+      $("muteButton").textContent = "🎙 Lyssnar hela tiden — tryck för att pausa";
+      $("vibeText").textContent = "Lyssnar…";
     }
   });
 
