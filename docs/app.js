@@ -133,7 +133,8 @@ Regler du aldrig bryter mot:
     eventName: "VIBE Testsession",
     speaking: false,
     rt: null,
-    lastVoiceError: null
+    lastVoiceError: null,
+    lastImageError: null
   };
 
   const $ = (id) => document.getElementById(id);
@@ -873,6 +874,24 @@ Regler du aldrig bryter mot:
     return `API-anrop misslyckades (${status}): ${detail}`;
   }
 
+  // Browsers never expose *why* a fetch() failed — a CORS block and a real
+  // connectivity failure both surface to script as the same generic
+  // TypeError, by design (so a page can't probe a server's CORS config).
+  // A `no-cors` request sidesteps CORS entirely: it still succeeds
+  // (opaquely) as long as the request physically reaches the server, even
+  // if that server would refuse to let a normal cors-mode request read the
+  // response. So retrying the same URL in no-cors mode tells them apart —
+  // if THIS succeeds where the real request just threw, the real failure
+  // was a CORS policy block, not a network problem.
+  async function probeCorsBlock(url) {
+    try {
+      await fetch(url, { method: "POST", mode: "no-cors" });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function generateAI() {
     if (!state.capturedBlob) {
       alert("Ta ett foto först.");
@@ -947,16 +966,22 @@ Regler du aldrig bryter mot:
       img.src = `data:image/png;base64,${b64}`;
     } catch (error) {
       console.error(error);
-      // A CORS block never reaches OpenAI's server, so fetch() rejects with
-      // a bare TypeError and no status code — that's the "browser blocked
-      // it" case documented in docs/README.md. Anything else here already
-      // carries OpenAI's real status code + a status-specific description
-      // (see describeImageApiError above) and should be shown as-is.
-      const detail = error.name === "AbortError"
-        ? "Bildgenereringen tog för lång tid (över 2 minuter) och avbröts. Försök igen."
-        : error instanceof TypeError
-        ? "Nätverksfel innan förfrågan nådde OpenAI — kontrollera internetanslutningen, eller så är det webbläsarens CORS-policy som blockerar direkta bild-API-anrop (känd begränsning, se docs/README.md)."
-        : error.message;
+      let detail;
+      if (error.name === "AbortError") {
+        detail = "Bildgenereringen tog för lång tid (över 2 minuter) och avbröts. Försök igen.";
+      } else if (error instanceof TypeError) {
+        // Anything else already carries OpenAI's real status code + a
+        // status-specific description (describeImageApiError above) and is
+        // shown as-is — this branch is only for the opaque case where
+        // fetch() itself rejected before any HTTP response existed.
+        const reachedServer = await probeCorsBlock("https://api.openai.com/v1/images/edits");
+        detail = reachedServer
+          ? "Webbläsarens CORS-policy blockerar direkta bild-API-anrop till OpenAI — bekräftat via testanrop (nätverket når fram, men svaret nekas). Känd begränsning, se docs/README.md: kräver en serverlös gateway för att lösa permanent."
+          : "Nätverksfel — begäran nådde aldrig OpenAI (bekräftat via testanrop). Kontrollera wifi/mobildata och försök igen.";
+      } else {
+        detail = error.message;
+      }
+      state.lastImageError = `${detail} [${error.name || "Error"}: ${(error.message || "").slice(0, 200)}]`;
       $("resultMessage").textContent = `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
       if (state.rt) {
         injectContext(`Bildomvandlingen misslyckades tekniskt (${detail}). Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.`);
@@ -1056,6 +1081,9 @@ Regler du aldrig bryter mot:
     $("voiceErrorStatus").textContent = state.lastVoiceError
       ? `Senaste röstanslutningsfel: ${state.lastVoiceError}`
       : "Inget röstanslutningsfel denna session.";
+    $("imageErrorStatus").textContent = state.lastImageError
+      ? `Senaste bildgenereringsfel: ${state.lastImageError}`
+      : "Inget bildgenereringsfel denna session.";
     $("operatorDialog").showModal();
   });
   $("closeOperator").addEventListener("click", () => $("operatorDialog").close());
