@@ -5,7 +5,7 @@
   const SPEECH_LANG = "sv-SE";
   const REALTIME_MODEL = "gpt-realtime-2.1"; // flagship voice model — lower latency + GPT-5-class reasoning vs plain gpt-realtime
   const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
-  const IMAGE_QUALITY = "high"; // low/medium/high — frontier quality is a confirmed product priority over cost
+  const IMAGE_QUALITY = "medium"; // low/medium/high — traded down from "high" for noticeably faster generation at a live event
   const BEST_SHOT_MODEL = "gpt-5.1"; // vision-capable chat model used to pick the best of the countdown burst shots
   const COUNTDOWN_START = 10;
   const CAPTURE_AT_OR_ABOVE = 7; // shots are taken while the on-screen number is 7, 8, 9 or 10
