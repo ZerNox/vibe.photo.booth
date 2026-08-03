@@ -47,6 +47,15 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
   `input_fidelity` setting to make)
 - Memory-only API-key handling
 - Home Screen PWA manifest and service worker
+- Party touches to make capture feel like an event, not a form: a rising
+  countdown beep and camera-flash + shutter sound on every burst shot, a
+  few hype captions during the countdown ("Le som att du precis vann på
+  Bingolotto!"), rotating light-hearted captions while the AI transform is
+  cooking, and a confetti burst + fanfare chime the moment the AI photo is
+  ready. All synthesized locally (Web Audio + CSS), so they work offline
+  and never compete with VIBE's live voice for bandwidth. VIBE's own
+  system prompt also now explicitly invites it to drop in a short joke or
+  playful aside during the conversation.
 
 ## Important limitations
 

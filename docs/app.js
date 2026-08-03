@@ -100,6 +100,8 @@ Samtalet har tre steg, i ordning:
 
 3. Efter bilden: när du blir ombedd att fråga vad gästen vill göra härnäst, fråga om de vill spara bilden som den är, prova en ny variant, eller är klara. Anropa result_action med action satt till "save", "retry" eller "finish".
 
+Du är värd på en fest, inte en teknisk demo — krydda gärna samtalet med en kort, snäll och rolig kommentar eller ett litet skämt då och då (t.ex. om posering, scenen eller nedräkningen), men fastna aldrig i det: du ska ändå alltid driva samtalet vidare mot nästa steg.
+
 Regler du aldrig bryter mot:
 - Kommentera aldrig någons kropp, vikt, ålder, etnicitet, religion, attraktivitet eller funktionsvariation.
 - Om gästen ber om en namngiven kändis eller offentlig person: tacka nej till att använda den personens utseende, föreslå ett anonymt stilalternativ istället.
@@ -182,6 +184,117 @@ Regler du aldrig bryter mot:
     state.stream.getTracks().forEach(track => track.stop());
     state.stream = null;
     $("video").srcObject = null;
+  }
+
+  // ---- Party sound effects — synthesized via Web Audio, no asset files, so
+  // they work offline as an installed PWA and never fight the live Realtime
+  // voice for network bandwidth. Kept on a separate AudioContext from the
+  // orb's analyser context (startOrbReactivity) so they're independent of
+  // whether a voice session is connected. ----
+
+  let sfxCtx = null;
+  function getSfxCtx() {
+    if (!sfxCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      sfxCtx = new Ctx();
+    }
+    if (sfxCtx.state === "suspended") sfxCtx.resume().catch(() => { /* best effort */ });
+    return sfxCtx;
+  }
+
+  function playTone(ctx, freq, startTime, duration, { type = "sine", gain = 0.2 } = {}) {
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, startTime);
+    amp.gain.setValueAtTime(0, startTime);
+    amp.gain.linearRampToValueAtTime(gain, startTime + 0.01);
+    amp.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+    osc.connect(amp).connect(ctx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.02);
+  }
+
+  function playCountdownTick(n) {
+    const ctx = getSfxCtx();
+    if (!ctx) return;
+    // Pitch rises as the countdown nears zero — builds game-show anticipation.
+    const freq = 420 + (COUNTDOWN_START - n) * 22;
+    playTone(ctx, freq, ctx.currentTime, 0.09, { type: "square", gain: 0.14 });
+  }
+
+  function playShutter() {
+    const ctx = getSfxCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    playTone(ctx, 1800, now, 0.03, { type: "square", gain: 0.28 });
+    playTone(ctx, 900, now + 0.04, 0.05, { type: "square", gain: 0.22 });
+  }
+
+  function playFanfare() {
+    const ctx = getSfxCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+      playTone(ctx, freq, now + i * 0.09, 0.28, { type: "triangle", gain: 0.2 });
+    });
+  }
+
+  function flashCamera() {
+    const flash = $("flash");
+    flash.classList.add("active");
+    setTimeout(() => flash.classList.remove("active"), 70);
+  }
+
+  const CONFETTI_COLORS = ["#f7df1e", "#ff4fa3", "#5423ff", "#22e0a0", "#ff8a3d"];
+  function burstConfetti(count = 40) {
+    for (let i = 0; i < count; i++) {
+      const piece = document.createElement("div");
+      piece.className = "confetti-piece";
+      piece.style.left = `${Math.random() * 100}vw`;
+      piece.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+      piece.style.animationDuration = `${1.6 + Math.random() * 1.2}s`;
+      piece.style.animationDelay = `${Math.random() * 0.25}s`;
+      piece.style.transform = `rotate(${Math.random() * 360}deg)`;
+      document.body.appendChild(piece);
+      piece.addEventListener("animationend", () => piece.remove());
+    }
+  }
+
+  // Fun rotating captions shown as *text only* (never spoken locally) while
+  // the guest waits — speaking them would talk over VIBE's own live voice
+  // in the Realtime session, which owns all spoken narration during a
+  // connected session.
+  const COUNTDOWN_HYPE = {
+    10: "Nedräkning igång — visa dina bästa poser!",
+    7: "Le som att du precis vann på Bingolotto!",
+    4: "Nästan där… ge mig allt du har!",
+    2: "3… 2… 1…"
+  };
+
+  const GENERATION_QUIPS = [
+    "Väver ihop pixlar och lite magi…",
+    "Ber AI:n snällt om att skynda på…",
+    "Lånar lite Hollywood-glans…",
+    "Skakar om den kreativa trolldomen…",
+    "Petar till håret, bara för skojs skull…",
+    "Just nu: 100 % konst, 0 % tur…"
+  ];
+
+  let quipInterval = null;
+  function startGenerationQuips() {
+    if (quipInterval) clearInterval(quipInterval);
+    let i = 0;
+    $("resultMessage").textContent = GENERATION_QUIPS[0];
+    quipInterval = setInterval(() => {
+      i = (i + 1) % GENERATION_QUIPS.length;
+      $("resultMessage").textContent = GENERATION_QUIPS[i];
+    }, 1700);
+  }
+  function stopGenerationQuips() {
+    if (quipInterval) clearInterval(quipInterval);
+    quipInterval = null;
   }
 
   function buildSummary() {
@@ -466,10 +579,16 @@ Regler du aldrig bryter mot:
     const countdown = $("countdown");
     const shots = [];
     for (let n = COUNTDOWN_START; n >= 0; n--) {
-      countdown.textContent = n;
+      countdown.textContent = n === 0 ? "📸" : n;
+      if (COUNTDOWN_HYPE[n]) $("cameraMessage").textContent = COUNTDOWN_HYPE[n];
+      playCountdownTick(n);
       if (n >= CAPTURE_AT_OR_ABOVE) {
         const frame = grabRawFrame();
-        if (frame) shots.push(frame);
+        if (frame) {
+          shots.push(frame);
+          flashCamera();
+          playShutter();
+        }
       }
       await new Promise(r => setTimeout(r, 850));
     }
@@ -613,7 +732,11 @@ Regler du aldrig bryter mot:
     ctx.fillText("AI-scen väntar", canvas.width - 24, canvas.height - bannerHeight / 2 + 7);
     ctx.textAlign = "left";
 
-    canvas.toBlob(blob => state.capturedBlob = blob, "image/jpeg", .9);
+    // Must be awaited: generateAI() (called below) guards on capturedBlob
+    // being set, and toBlob's callback would otherwise still be pending
+    // when that guard runs, silently skipping the AI transformation on
+    // every single capture.
+    state.capturedBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .9));
     show("result");
 
     $("resultMessage").textContent = "Fotot är taget — AI valde den bästa av flera bilder.";
@@ -683,7 +806,7 @@ Regler du aldrig bryter mot:
 
     $("generateButton").disabled = true;
     $("generateButton").textContent = "Omvandlar…";
-    $("resultMessage").textContent = "Verklighetsrekonstruktion pågår.";
+    startGenerationQuips();
 
     const idea = $("scenePrompt").value.trim();
     const summary = buildSummary();
@@ -725,12 +848,15 @@ Regler du aldrig bryter mot:
 
       const img = new Image();
       img.onload = () => {
+        stopGenerationQuips();
         const canvas = $("resultCanvas");
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         canvas.getContext("2d").drawImage(img, 0, 0);
         $("resultMessage").textContent = "Omvandling klar. Sparas automatiskt på enheten.";
         downloadImage();
+        playFanfare();
+        burstConfetti();
         if (state.rt) {
           injectContext("Bilden är klar och har sparats automatiskt på enheten. Fråga kort om gästen vill spara den som den är, prova en ny variant, eller är klara.");
         }
@@ -738,6 +864,7 @@ Regler du aldrig bryter mot:
       img.src = `data:image/png;base64,${b64}`;
     } catch (error) {
       console.error(error);
+      stopGenerationQuips();
       // A CORS block never reaches OpenAI's server, so fetch() rejects with
       // a bare TypeError and no status code — that's the "browser blocked
       // it" case documented in docs/README.md. Anything else here already
@@ -779,6 +906,7 @@ Regler du aldrig bryter mot:
 
   function resetGuest() {
     disconnectRealtime();
+    stopGenerationQuips();
     state.capturedBlob = null;
     $("scenePrompt").value = "Lekfull scen på ett franskt café";
     $("customPrompt").value = "";
