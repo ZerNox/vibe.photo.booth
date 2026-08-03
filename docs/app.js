@@ -9,6 +9,21 @@
   const BEST_SHOT_MODEL = "gpt-5.1"; // vision-capable chat model used to pick the best of the countdown burst shots
   const COUNTDOWN_START = 10;
   const CAPTURE_AT_OR_ABOVE = 7; // shots are taken while the on-screen number is 7, 8, 9 or 10
+
+  // Presence detection (architecture.md "Presence Module"): a fully
+  // on-device background-subtraction heuristic, not a cloud vision call —
+  // checking "is anyone there?" this often has to be free and local.
+  // PRES-FR-003: guest must be stably visible this long before VIBE
+  // auto-connects the voice session, so a fleeting pass-by doesn't trigger it.
+  const PRESENCE_DWELL_MS = 2000;
+  const PRESENCE_SAMPLE_INTERVAL_MS = 200;
+  // Average per-pixel grayscale delta (0-255 scale) against the learned
+  // empty-booth baseline that counts as "someone is in frame". Loose enough
+  // to survive webcam noise/light flicker without per-venue calibration.
+  const PRESENCE_DIFF_THRESHOLD = 18;
+  // How fast the empty-booth baseline drifts toward the current frame while
+  // nobody is present, so slow lighting changes don't read as a guest.
+  const PRESENCE_BG_LEARN_RATE = 0.05;
   // Voice name introduced with the gpt-realtime GA release. "cedar" is the
   // male-sounding voice from that release (the female-sounding sibling is
   // "marin"). If session creation fails, this is the first thing to check
@@ -171,6 +186,7 @@ Regler du aldrig bryter mot:
       $("cameraMessage").textContent = "Visuell inmatning aktiv.";
       $("status").textContent = "Redo";
       speak("Visuella system aktiva. Mänsklig interaktion kan nu börja.");
+      startPresenceLoop();
     } catch (error) {
       $("cameraMessage").textContent = "Kamera- eller mikrofonbehörighet gavs inte.";
       $("status").textContent = "Behörighet krävs";
@@ -183,6 +199,142 @@ Regler du aldrig bryter mot:
     state.stream.getTracks().forEach(track => track.stop());
     state.stream = null;
     $("video").srcObject = null;
+  }
+
+  // ---- Presence detection + attention-driving idle loop ----
+  // Nobody in frame yet: a quiet synthesized loop plays to draw attention,
+  // and a cheap on-device heuristic (no API calls) watches for a guest.
+  // The moment someone holds still in frame for PRESENCE_DWELL_MS, VIBE
+  // auto-connects the voice session — see beginGuestSession() below.
+
+  let presenceTimer = null;
+  let presenceBackground = null; // Float32Array grayscale baseline of the empty booth
+  let presenceSince = null; // performance.now() timestamp presence became continuous
+  let presenceGreetTriggered = false; // guards against retry-storming a failed auto-connect
+
+  let attractCtx = null;
+  let attractLoop = null; // { master, intervalId } while the attention loop is playing
+
+  function startAttractMusic() {
+    if (attractLoop) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!attractCtx) attractCtx = new Ctx();
+      attractCtx.resume().catch(() => { /* best effort */ });
+
+      const master = attractCtx.createGain();
+      master.gain.value = 0.05; // quiet ambient — meant to catch attention, not fill the room
+      master.connect(attractCtx.destination);
+
+      const notes = [261.63, 329.63, 392.0, 523.25]; // C4 E4 G4 C5 — simple arpeggio loop
+      const noteSeconds = 0.55;
+      let step = 0;
+      const playNote = () => {
+        if (!attractLoop) return;
+        const osc = attractCtx.createOscillator();
+        const gain = attractCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = notes[step % notes.length];
+        gain.gain.setValueAtTime(0, attractCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(1, attractCtx.currentTime + 0.06);
+        gain.gain.linearRampToValueAtTime(0, attractCtx.currentTime + noteSeconds);
+        osc.connect(gain);
+        gain.connect(master);
+        osc.start();
+        osc.stop(attractCtx.currentTime + noteSeconds + 0.05);
+        step++;
+      };
+      const intervalId = setInterval(playNote, noteSeconds * 1000);
+      attractLoop = { master, intervalId };
+      playNote();
+    } catch (err) {
+      console.warn("Attention-loopen kunde inte startas.", err);
+    }
+  }
+
+  function stopAttractMusic() {
+    if (!attractLoop) return;
+    clearInterval(attractLoop.intervalId);
+    try { attractLoop.master.disconnect(); } catch { /* already disconnected */ }
+    attractLoop = null;
+  }
+
+  function toGrayscale(imageData) {
+    const { data } = imageData;
+    const gray = new Float32Array(data.length / 4);
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+      gray[p] = data[i] * .299 + data[i + 1] * .587 + data[i + 2] * .114;
+    }
+    return gray;
+  }
+
+  // Background-subtraction presence check: compares the current downscaled
+  // frame against a learned empty-booth baseline, so a guest standing still
+  // still reads as "present" — plain frame-to-frame motion diffing would
+  // drop to zero the moment they stop moving.
+  function samplePresence() {
+    const video = $("video");
+    if (!video.videoWidth) return;
+    const canvas = $("motionCanvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const gray = toGrayscale(ctx.getImageData(0, 0, canvas.width, canvas.height));
+
+    if (!presenceBackground) {
+      presenceBackground = gray; // first frame becomes the initial empty-booth baseline
+      return;
+    }
+
+    let diffSum = 0;
+    for (let i = 0; i < gray.length; i++) diffSum += Math.abs(gray[i] - presenceBackground[i]);
+    const present = (diffSum / gray.length) > PRESENCE_DIFF_THRESHOLD;
+
+    handlePresenceSample(present);
+
+    if (!present) {
+      // Slowly adapt to the empty room (lighting drift) only while nobody's there.
+      for (let i = 0; i < gray.length; i++) {
+        presenceBackground[i] += (gray[i] - presenceBackground[i]) * PRESENCE_BG_LEARN_RATE;
+      }
+    }
+  }
+
+  function handlePresenceSample(present) {
+    if (state.rt || presenceGreetTriggered) return; // guest journey already under way
+    const connecting = $("beginButton").disabled;
+    const now = performance.now();
+
+    if (present) {
+      stopAttractMusic();
+      if (presenceSince === null) presenceSince = now;
+      if (!connecting) $("cameraMessage").textContent = "Människa upptäckt — säger hej om ett ögonblick…";
+      if (!connecting && now - presenceSince >= PRESENCE_DWELL_MS) {
+        presenceGreetTriggered = true;
+        beginGuestSession({ auto: true });
+      }
+    } else {
+      presenceSince = null;
+      if (!connecting) {
+        $("cameraMessage").textContent = "Väntar på en kreativ människa.";
+        startAttractMusic();
+      }
+    }
+  }
+
+  function startPresenceLoop() {
+    stopPresenceLoop();
+    presenceBackground = null;
+    presenceSince = null;
+    presenceGreetTriggered = false;
+    presenceTimer = setInterval(samplePresence, PRESENCE_SAMPLE_INTERVAL_MS);
+    startAttractMusic();
+  }
+
+  function stopPresenceLoop() {
+    if (presenceTimer) clearInterval(presenceTimer);
+    presenceTimer = null;
+    stopAttractMusic();
   }
 
   function buildSummary() {
@@ -457,6 +609,47 @@ Regler du aldrig bryter mot:
     $("muteButton").hidden = true;
     $("muteButton").textContent = "🎙 Lyssnar hela tiden — tryck för att pausa";
     $("beginButton").hidden = false;
+  }
+
+  // Connects the live voice session — used both by the manual "Jag är
+  // redo" tap and by presence detection auto-connecting once a guest has
+  // held still in frame for PRESENCE_DWELL_MS (see handlePresenceSample).
+  async function beginGuestSession({ auto = false } = {}) {
+    if (state.rt || $("beginButton").disabled) return; // already connecting or connected
+    stopPresenceLoop();
+    $("vibeText").textContent = "Ansluter till VIBE…";
+    $("beginButton").disabled = true;
+    try {
+      state.rt = await connectRealtime();
+      state.lastVoiceError = null;
+      $("beginButton").hidden = true;
+      $("beginButton").disabled = false;
+      $("muteButton").hidden = false;
+    } catch (error) {
+      console.error(error);
+      $("beginButton").disabled = false;
+      // A CORS block never reaches OpenAI's server, so fetch() rejects with a
+      // bare TypeError and no status/body — same failure mode documented for
+      // image generation in describeImageApiError/docs/README.md.
+      const detail = error instanceof TypeError
+        ? "Nätverksfel innan förfrågan nådde OpenAI — kontrollera internetanslutningen, eller så blockerar webbläsarens CORS-policy direkta röst-API-anrop (se docs/README.md)."
+        : (error.message || "Okänt fel.");
+      state.lastVoiceError = detail;
+      $("vibeText").textContent = "Rösten kunde inte anslutas. Tryck \"Jag är redo\" för att försöka igen.";
+      // No dev console on a guest iPhone: this is the only way an operator
+      // ever sees *why* the connection failed, so it has to be shown, not
+      // just logged (see docs/README.md's "check the browser console" note,
+      // which nobody testing on-device can actually act on). Skipped for the
+      // presence-triggered auto-connect — alert() blocks the whole page and
+      // nobody consciously chose to trigger this attempt; the vibeText
+      // message plus the Operator dialog's lastVoiceError are enough there.
+      // There is no text/local fallback to fall into — voice is the only
+      // flow, so the guest stays here and retries (via the button) once the
+      // underlying issue is fixed.
+      if (!auto) {
+        alert(`Rösten kunde inte anslutas:\n\n${detail}\n\nFelet visas även under Operatör. Åtgärda och tryck "Jag är redo" igen.`);
+      }
+    }
   }
 
   // ---- Capture / generation ----
@@ -831,6 +1024,7 @@ Regler du aldrig bryter mot:
     show("booth");
     $("cameraMessage").textContent = "Väntar på en kreativ människa.";
     speak("Sessionen rensad. Fantasisystemen återgår till vänteläge.");
+    startPresenceLoop(); // re-arm auto-greeting for the next guest
   }
 
   $("startButton").addEventListener("click", async () => {
@@ -847,35 +1041,7 @@ Regler du aldrig bryter mot:
     await startCamera();
   });
 
-  $("beginButton").addEventListener("click", async () => {
-    $("vibeText").textContent = "Ansluter till VIBE…";
-    $("beginButton").disabled = true;
-    try {
-      state.rt = await connectRealtime();
-      state.lastVoiceError = null;
-      $("beginButton").hidden = true;
-      $("beginButton").disabled = false;
-      $("muteButton").hidden = false;
-    } catch (error) {
-      console.error(error);
-      $("beginButton").disabled = false;
-      // A CORS block never reaches OpenAI's server, so fetch() rejects with a
-      // bare TypeError and no status/body — same failure mode documented for
-      // image generation in describeImageApiError/docs/README.md.
-      const detail = error instanceof TypeError
-        ? "Nätverksfel innan förfrågan nådde OpenAI — kontrollera internetanslutningen, eller så blockerar webbläsarens CORS-policy direkta röst-API-anrop (se docs/README.md)."
-        : (error.message || "Okänt fel.");
-      state.lastVoiceError = detail;
-      $("vibeText").textContent = "Rösten kunde inte anslutas. Tryck \"Jag är redo\" för att försöka igen.";
-      // No dev console on a guest iPhone: this is the only way an operator
-      // ever sees *why* the connection failed, so it has to be shown, not
-      // just logged (see docs/README.md's "check the browser console" note,
-      // which nobody testing on-device can actually act on). There is no
-      // text/local fallback to fall into — voice is the only flow, so the
-      // guest stays here and retries once the underlying issue is fixed.
-      alert(`Rösten kunde inte anslutas:\n\n${detail}\n\nFelet visas även under Operatör. Åtgärda och tryck "Jag är redo" igen.`);
-    }
-  });
+  $("beginButton").addEventListener("click", () => beginGuestSession());
 
   // Mic is live continuously (server_vad drives turn-taking) — this is just
   // a manual mute for a guest who wants to step away from the mic briefly.
@@ -928,6 +1094,7 @@ Regler du aldrig bryter mot:
 
   window.addEventListener("beforeunload", () => {
     disconnectRealtime();
+    stopPresenceLoop();
     state.apiKey = "";
     stopCamera();
   });

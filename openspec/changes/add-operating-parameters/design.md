@@ -67,7 +67,7 @@ party environment (see `REALTIME_TURN_DETECTION` in `docs/app.js`) instead
 of by gating every turn behind a tap; `semantic_vad` is the documented
 fallback if false triggers or premature cutoffs show up in the field. A
 manual mute control remains for a guest who wants to step away from the
-mic. This is compatible with the existing 1.5s stable-presence dwell
+mic. This is compatible with the existing 2s stable-presence dwell
 (PRES-FR-003), which triggers greeting, not listening.
 
 ## Barge-In
