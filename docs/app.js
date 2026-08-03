@@ -29,14 +29,8 @@
   // Best-effort accent instruction for the live Realtime voice — OpenAI's
   // realtime voices don't expose a dialect *parameter*, so this leans on
   // the model following a spoken-style instruction. Not guaranteed to be
-  // authentic; "rikssvenska" adds no instruction (model default).
-  const DIALECT_INSTRUCTIONS = {
-    rikssvenska: "",
-    skanska: "Uttalsstil: tala med en tydlig skånsk dialekt (uttal, melodi och ordval), men var fortfarande lätt att förstå.",
-    goteborgska: "Uttalsstil: tala med en tydlig göteborgsk dialekt (uttal, melodi och ordval), men var fortfarande lätt att förstå.",
-    norrlandska: "Uttalsstil: tala med en tydlig norrländsk dialekt (uttal, melodi och ordval), men var fortfarande lätt att förstå.",
-    finlandssvenska: "Uttalsstil: tala med en tydlig finlandssvensk brytning (uttal, melodi och ordval), men var fortfarande lätt att förstå."
-  };
+  // authentic.
+  const DIALECT_INSTRUCTION = "Uttalsstil: tala med en tydlig göteborgsk dialekt (uttal, melodi och ordval), men var fortfarande lätt att förstå.";
 
   const SET_SCENE_TOOL = {
     type: "function",
@@ -108,10 +102,7 @@ Regler du aldrig bryter mot:
 - Prata bara om fotobåset, scenen och upplevelsen.
 `.trim();
 
-  function buildInstructions(dialect) {
-    const extra = DIALECT_INSTRUCTIONS[dialect];
-    return extra ? `${SYSTEM_PROMPT_BASE}\n\n${extra}` : SYSTEM_PROMPT_BASE;
-  }
+  const SYSTEM_PROMPT = `${SYSTEM_PROMPT_BASE}\n\n${DIALECT_INSTRUCTION}`;
 
   const state = {
     apiKey: "",
@@ -120,7 +111,6 @@ Regler du aldrig bryter mot:
     treatment: "contextual",
     capturedBlob: null,
     eventName: "VIBE Testsession",
-    dialect: "rikssvenska",
     speaking: false,
     rt: null
   };
@@ -288,7 +278,7 @@ Regler du aldrig bryter mot:
     sendRt({ type: "response.create" });
   }
 
-  async function mintEphemeralToken(apiKey, dialect) {
+  async function mintEphemeralToken(apiKey) {
     const resp = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
       method: "POST",
       headers: {
@@ -299,7 +289,7 @@ Regler du aldrig bryter mot:
         session: {
           type: "realtime",
           model: REALTIME_MODEL,
-          instructions: buildInstructions(dialect),
+          instructions: SYSTEM_PROMPT,
           audio: { output: { voice: REALTIME_VOICE } },
           tools: ALL_TOOLS,
           tool_choice: "auto",
@@ -371,7 +361,7 @@ Regler du aldrig bryter mot:
     const micTrack = state.stream.getAudioTracks()[0];
     if (!micTrack) throw new Error("Ingen mikrofon hittades i strömmen.");
 
-    const ephemeralToken = await mintEphemeralToken(state.apiKey, state.dialect);
+    const ephemeralToken = await mintEphemeralToken(state.apiKey);
 
     const pc = new RTCPeerConnection();
     const remoteAudio = new Audio();
@@ -397,7 +387,7 @@ Regler du aldrig bryter mot:
         type: "session.update",
         session: {
           type: "realtime",
-          instructions: buildInstructions(state.dialect),
+          instructions: SYSTEM_PROMPT,
           audio: { output: { voice: REALTIME_VOICE } },
           tools: ALL_TOOLS,
           tool_choice: "auto",
@@ -692,7 +682,6 @@ Regler du aldrig bryter mot:
     state.apiKey = $("apiKey").value.trim();
     state.demo = !state.apiKey;
     state.eventName = $("eventName").value.trim() || "VIBE Testsession";
-    state.dialect = $("voiceDialect").value;
     $("apiKey").value = "";
     $("voiceHud").hidden = false;
     show("booth");
@@ -702,7 +691,6 @@ Regler du aldrig bryter mot:
   $("demoButton").addEventListener("click", async () => {
     state.apiKey = "";
     state.demo = true;
-    state.dialect = $("voiceDialect").value;
     $("voiceHud").hidden = false;
     show("booth");
     await startCamera();

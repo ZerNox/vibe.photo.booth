@@ -24,9 +24,8 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 - Every voice step still has a full touch equivalent (scene screen,
   review buttons, save/retry/finish buttons) — voice is additive, not a
   replacement for the touch UI
-- Optional Swedish dialect for VIBE's live voice (rikssvenska / skånska /
-  göteborgska / norrländska / finlandssvenska), picked on the setup
-  screen — best-effort, since OpenAI's realtime voices don't expose a
+- VIBE's live voice is instructed to speak in a Gothenburg (göteborgska)
+  dialect — best-effort, since OpenAI's realtime voices don't expose a
   dialect parameter; it's an instruction the model follows, not a
   guaranteed authentic accent.
 - Fallback scripted greeting + device speech synthesizer when no API key
