@@ -525,12 +525,32 @@ Regler du aldrig bryter mot:
     if (state.rt) state.rt.sendEvent(evt);
   }
 
+  // The Realtime API rejects response.create while a response is already
+  // active (an "error" event comes back instead of VIBE speaking) — easy to
+  // hit here because several call sites fire response.create in quick
+  // succession (e.g. "starting generation" immediately followed by
+  // "generation failed" if the request fails fast). That rejection used to
+  // be silently console-only, so the guest would just never hear the
+  // second message. Serializing through this queue instead of sending
+  // response.create directly avoids the collision.
+  let responseActive = false;
+  let pendingResponseCreate = false;
+
+  function requestResponse() {
+    if (responseActive) {
+      pendingResponseCreate = true;
+      return;
+    }
+    responseActive = true;
+    sendRt({ type: "response.create" });
+  }
+
   function injectContext(text) {
     sendRt({
       type: "conversation.item.create",
       item: { type: "message", role: "system", content: [{ type: "input_text", text }] }
     });
-    sendRt({ type: "response.create" });
+    requestResponse();
   }
 
   async function mintEphemeralToken(apiKey) {
@@ -582,7 +602,7 @@ Regler du aldrig bryter mot:
       countdownAndCapture(); // announces itself + triggers its own response.create
     } else {
       show("scene");
-      sendRt({ type: "response.create" });
+      requestResponse();
     }
   }
 
@@ -592,7 +612,7 @@ Regler du aldrig bryter mot:
     } else if (args.action === "finish") {
       resetGuest(); // ends the session; nothing further to say
     } else {
-      sendRt({ type: "response.create" }); // "save": just prompt an acknowledgement
+      requestResponse(); // "save": just prompt an acknowledgement
     }
   }
 
@@ -605,7 +625,7 @@ Regler du aldrig bryter mot:
     });
     if (name === "set_scene") {
       applySceneFromVoice(args);
-      sendRt({ type: "response.create" });
+      requestResponse();
     } else if (name === "confirm_capture") {
       handleConfirmCapture(args);
     } else if (name === "result_action") {
@@ -653,6 +673,11 @@ Regler du aldrig bryter mot:
           tool_choice: "auto"
         }
       });
+      // Uses the local sendEvent (not requestResponse/sendRt) because state.rt
+      // isn't assigned yet at this point — connectRealtime() only returns,
+      // and sets state.rt, after this "open" handler may already have fired.
+      responseActive = true;
+      pendingResponseCreate = false;
       sendEvent({ type: "response.create" }); // let VIBE greet first
     });
 
@@ -661,6 +686,16 @@ Regler du aldrig bryter mot:
       try { evt = JSON.parse(e.data); } catch { return; }
       console.debug("[VIBE realtime]", evt.type, evt);
 
+      if (evt.type === "response.created") {
+        responseActive = true;
+      }
+      if (evt.type === "response.done") {
+        responseActive = false;
+        if (pendingResponseCreate) {
+          pendingResponseCreate = false;
+          requestResponse();
+        }
+      }
       if (evt.type === "response.output_audio_transcript.delta" || evt.type === "response.audio_transcript.delta") {
         liveCaption += evt.delta || "";
         $("vibeText").textContent = liveCaption;
@@ -687,6 +722,10 @@ Regler du aldrig bryter mot:
       }
       if (evt.type === "error") {
         console.error("[VIBE realtime error]", evt.error || evt);
+        // Previously console-only, so a rejected response.create (e.g. two
+        // fired too close together) was completely invisible to the guest
+        // and operator alike — now at least visible under Operatör.
+        state.lastVoiceError = (evt.error && evt.error.message) || JSON.stringify(evt.error || evt).slice(0, 300);
       }
     });
 
@@ -718,6 +757,8 @@ Regler du aldrig bryter mot:
     try { state.rt.pc.close(); } catch { /* already closed */ }
     if (state.rt.micTrack) state.rt.micTrack.enabled = true;
     state.rt = null;
+    responseActive = false;
+    pendingResponseCreate = false;
     stopOrbReactivity();
     $("muteButton").hidden = true;
     $("muteButton").textContent = "🎙 Lyssnar hela tiden — tryck för att pausa";
