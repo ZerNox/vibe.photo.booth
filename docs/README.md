@@ -7,9 +7,10 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 - Front-camera and microphone permission flow
 - Live VIBE voice conversation via OpenAI's Realtime API (WebRTC,
   `gpt-realtime-2.1` — lower latency and GPT-5-class reasoning vs the
-  earlier `gpt-realtime`) when an API key is entered — real AI speech and
-  listening for the *entire* guest journey, not just device
-  text-to-speech and not just the scene-discovery step
+  earlier `gpt-realtime`) — real AI speech and listening for the *entire*
+  guest journey. An API key is required to start the app at all; there is
+  no demo mode and no text-only fallback — voice is the only supported
+  flow
 - A floating, audio-reactive orb (Web Audio analyser on the live voice
   stream) that visibly moves/glows in sync with VIBE's actual speech
   volume, not a generic looping animation
@@ -28,20 +29,22 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
   dialect — best-effort, since OpenAI's realtime voices don't expose a
   dialect parameter; it's an instruction the model follows, not a
   guaranteed authentic accent.
-- Fallback scripted greeting + device speech synthesizer when no API key
-  is entered (interface-demo mode) or if the Realtime connection fails
+- If the Realtime connection fails, the app shows the real error (alert +
+  under Operatör) and lets the operator retry — it does not drop into any
+  other flow
 - Contextual / custom / no-change treatment modes
 - Ten-second camera countdown that bursts four candidate shots near the
   start (while the on-screen number reads 10, 9, 8, 7), then lets AI pick
   the best one (`BEST_SHOT_MODEL`, a vision-capable chat model judging
   open eyes / expression / motion blur / framing) before continuing —
-  falls back to a local sharpness heuristic (Laplacian variance) in
-  interface-demo mode or if that API call fails
+  falls back to a local sharpness heuristic (Laplacian variance) only if
+  that one API call itself fails, not as a separate app mode
 - Automatic on-device save the moment a generated image is ready (see
   "Where images end up" below for what "automatic" can and can't mean on
   iOS)
-- Optional direct-browser image-edit API attempt (`gpt-image-2`, high
-  quality + high input fidelity)
+- Direct-browser image-edit API call (`gpt-image-2`, high quality; the
+  model always processes inputs at high fidelity, so there's no separate
+  `input_fidelity` setting to make)
 - Memory-only API-key handling
 - Home Screen PWA manifest and service worker
 
@@ -106,26 +109,25 @@ mini model. That's roughly **$0.10–$0.30 per guest** for voice alone.
 **Images — `gpt-image-2`** (current flagship, released April 2026 —
 supersedes `gpt-image-1.5`): at 1024×1024, roughly **$0.006 low /
 $0.053 medium / $0.211 high** per image. This build requests `quality:
-"high"` and `input_fidelity: "high"` explicitly (`IMAGE_QUALITY` /
-`IMAGE_INPUT_FIDELITY` in `app.js`) — both settings at their frontier
-tier, not the API default and not the cheaper mid-tier this project
-briefly used. **Confirmed product priority: frontier-quality voice and
-image generation, cost secondary.** `input_fidelity` is the one that's
-also a named spec requirement regardless of that priority — it controls
-how much of the source photo's actual face/detail survives the edit,
-which `add-transformation-contract`'s ≥4/5 identity-preservation rubric
-holds to a hard bar (confirmed for `gpt-image-1.5`, presumed to carry
-over to `gpt-image-2` but not independently verified). One generation
-happens automatically per capture, plus whatever "prova igen" (retry)
-requests the guest makes via `result_action`.
+"high"` explicitly (`IMAGE_QUALITY` in `app.js`) — frontier tier, not the
+API default and not the cheaper mid-tier this project briefly used.
+**Confirmed product priority: frontier-quality voice and image
+generation, cost secondary.** Identity preservation — the thing
+`add-transformation-contract`'s ≥4/5 identity-preservation rubric holds to
+a hard bar — no longer needs an explicit `input_fidelity` setting on this
+model: `gpt-image-2` always processes image inputs at high fidelity and
+rejects the parameter if it's sent (confirmed live; `gpt-image-1.5`
+required setting it explicitly). One generation happens automatically per
+capture, plus whatever "prova igen" (retry) requests the guest makes via
+`result_action`.
 
 **Best-shot picker — `gpt-5.1` (`BEST_SHOT_MODEL`):** one chat-completions
 call per capture with four low-detail JPEG frames attached, so this is a
 few thousand input tokens and a handful of output tokens — a small
 addition on top of the two costs above (not independently priced here;
 sanity-check against platform.openai.com/pricing along with the other
-figures). Only fires with an API key entered; interface-demo mode always
-uses the free local sharpness heuristic instead.
+figures). Falls back to the free local sharpness heuristic only if this
+one API call itself fails.
 
 **Combined, per booth session (one photo, regardless of group size):**
 roughly **$0.35–$0.55** at high quality / high fidelity with a typical
@@ -196,17 +198,19 @@ the latest build rather than a stale service-worker cache.
 4. Launch VIBE from the new Home Screen icon.
 5. Grant camera and microphone access.
 
-## Private API-key test
+## OpenAI API key (required)
 
 See [`access-token-guide.md`](access-token-guide.md) for how to create a
 dedicated OpenAI API key for this app, including which API access it
 needs and how to budget/rotate it.
 
+- A key is required to start the app — there is no demo/no-key mode.
 - Paste a dedicated low-budget OpenAI API key on the startup screen.
 - The key remains only in page memory.
 - Reloading or closing the page clears it.
 - Do not use a valuable or shared production key.
-- Do not use this mode at a public event.
+- Given the client-held-key model (see ADR-001), this build is for
+  private/operator testing only — not for a public event.
 
 ## Recommended iPhone setup
 

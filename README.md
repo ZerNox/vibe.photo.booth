@@ -10,7 +10,7 @@ VIBE, pick or discover a scene, pose, and get an AI-transformed photo.
 Served via GitHub Pages from [`docs/`](docs/) on `main`. Open it in
 Safari on an iPhone or iPad and use **Share → Add to Home Screen** for
 the full-screen PWA experience. See [`docs/README.md`](docs/README.md)
-for device setup, permissions, and the private API-key test mode, and
+for device setup, permissions, and the required OpenAI API key, and
 [`docs/access-token-guide.md`](docs/access-token-guide.md) for how to
 create the OpenAI API key itself.
 

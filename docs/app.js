@@ -6,7 +6,6 @@
   const REALTIME_MODEL = "gpt-realtime-2.1"; // flagship voice model — lower latency + GPT-5-class reasoning vs plain gpt-realtime
   const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
   const IMAGE_QUALITY = "high"; // low/medium/high — frontier quality is a confirmed product priority over cost
-  const IMAGE_INPUT_FIDELITY = "high"; // preserve the source photo's faces/detail
   const BEST_SHOT_MODEL = "gpt-5.1"; // vision-capable chat model used to pick the best of the countdown burst shots
   const COUNTDOWN_START = 10;
   const CAPTURE_AT_OR_ABOVE = 7; // shots are taken while the on-screen number is 7, 8, 9 or 10
@@ -110,7 +109,6 @@ Regler du aldrig bryter mot:
 
   const state = {
     apiKey: "",
-    demo: true,
     stream: null,
     treatment: "contextual",
     capturedBlob: null,
@@ -141,8 +139,9 @@ Regler du aldrig bryter mot:
     speechSynthesis.addEventListener("voiceschanged", loadSwedishVoice);
   }
 
-  // Local device TTS — used only as a fallback when no live Realtime
-  // voice session exists (demo mode, or a failed connection).
+  // Local device TTS — only for short cues outside the live Realtime voice
+  // session itself (camera-ready chime, session-reset chime), never as a
+  // stand-in flow for the guest journey, which is voice-only.
   function speak(text) {
     $("vibeText").textContent = text;
     if (!("speechSynthesis" in window)) return;
@@ -182,17 +181,6 @@ Regler du aldrig bryter mot:
     $("video").srcObject = null;
   }
 
-  function greeting() {
-    const greetings = [
-      "Människa upptäckt. Fantasimotorn är aktiv.",
-      "Visuellt motiv identifierat. Vanlig fotografering har inaktiverats.",
-      "Hälsningar, kolbaserad kreativ enhet. Ange önskad verklighet.",
-      "Rörelse bekräftad. Socialt protokoll initierat.",
-      "Utmärkt. Nya människor. Mina kreativa processorer började bli rastlösa."
-    ];
-    return greetings[Math.floor(Math.random() * greetings.length)];
-  }
-
   function buildSummary() {
     const idea = $("scenePrompt").value.trim() || "en fantasifull överraskningsscen";
     const custom = $("customPrompt").value.trim();
@@ -209,16 +197,9 @@ Regler du aldrig bryter mot:
     const summary = buildSummary();
     $("sceneSummary").textContent = summary;
     show("review");
-    // If a live voice session is running, VIBE asks about capture
-    // readiness itself (see set_scene handling below) — only speak this
-    // locally when there is no live session to do it.
-    if (!state.rt && "speechSynthesis" in window) {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(summary + " Ska jag fortsätta?");
-      u.lang = SPEECH_LANG;
-      if (swedishVoice) u.voice = swedishVoice;
-      speechSynthesis.speak(u);
-    }
+    // VIBE asks about capture readiness itself over the live voice session
+    // (see set_scene handling below) — voice is mandatory, so there's no
+    // local-speech path to fall back to here.
   }
 
   // ---- OpenAI Realtime (WebRTC) — live voice for the whole guest journey ----
@@ -467,7 +448,6 @@ Regler du aldrig bryter mot:
     stopOrbReactivity();
     $("muteButton").hidden = true;
     $("muteButton").textContent = "🎙 Lyssnar hela tiden — tryck för att pausa";
-    $("skipVoiceButton").hidden = true;
     $("beginButton").hidden = false;
   }
 
@@ -475,11 +455,7 @@ Regler du aldrig bryter mot:
 
   async function countdownAndCapture() {
     show("booth");
-    if (state.rt) {
-      injectContext("Gästen är redo. Säg mycket kort att nedräkningen är tio sekunder och att du tar flera bilder mot slutet av den, sedan är du tyst tills vidare.");
-    } else {
-      speak("Mänsklig uppställning godkänd. Fotografering om tio sekunder.");
-    }
+    injectContext("Gästen är redo. Säg mycket kort att nedräkningen är tio sekunder och att du tar flera bilder mot slutet av den, sedan är du tyst tills vidare.");
     const countdown = $("countdown");
     const shots = [];
     for (let n = COUNTDOWN_START; n >= 0; n--) {
@@ -597,14 +573,12 @@ Regler du aldrig bryter mot:
 
   async function pickBestFrame(shots) {
     if (shots.length === 1) return shots[0];
-    if (state.apiKey && !state.demo) {
-      try {
-        return await pickBestFrameWithAI(shots);
-      } catch (err) {
-        console.warn("AI-bildval misslyckades, faller tillbaka på lokal skärpeanalys.", err);
-      }
+    try {
+      return await pickBestFrameWithAI(shots);
+    } catch (err) {
+      console.warn("AI-bildval misslyckades, faller tillbaka på lokal skärpeanalys.", err);
+      return pickSharpestFrame(shots);
     }
-    return pickSharpestFrame(shots);
   }
 
   async function finishCapture(shots) {
@@ -635,18 +609,10 @@ Regler du aldrig bryter mot:
     canvas.toBlob(blob => state.capturedBlob = blob, "image/jpeg", .9);
     show("result");
 
-    if (state.rt) {
-      $("resultMessage").textContent = "Fotot är taget — AI valde den bästa av flera bilder.";
-      injectContext("Fotot har precis tagits — du tog flera bilder under nedräkningen och AI valde den bästa. Säg mycket kort att du nu skapar bildomvandlingen.");
-    } else {
-      const resultText = "Fotografiskt bevis säkrat — bästa bilden vald bland flera. Verklighetsomvandling redo.";
-      $("resultMessage").textContent = resultText;
-      speak(resultText);
-    }
+    $("resultMessage").textContent = "Fotot är taget — AI valde den bästa av flera bilder.";
+    injectContext("Fotot har precis tagits — du tog flera bilder under nedräkningen och AI valde den bästa. Säg mycket kort att du nu skapar bildomvandlingen.");
 
-    if (state.apiKey && !state.demo) {
-      await generateAI();
-    }
+    await generateAI();
   }
 
   function downloadImage() {
@@ -703,10 +669,6 @@ Regler du aldrig bryter mot:
   }
 
   async function generateAI() {
-    if (state.demo || !state.apiKey) {
-      alert("Denna session körs i gränssnittsdemoläge. Ange en API-nyckel i Operatörsinställningar för att försöka med direkt bildgenerering.");
-      return;
-    }
     if (!state.capturedBlob) {
       alert("Ta ett foto först.");
       return;
@@ -734,7 +696,9 @@ Regler du aldrig bryter mot:
       form.append("image", state.capturedBlob, "capture.jpg");
       form.append("size", "1024x1024");
       form.append("quality", IMAGE_QUALITY);
-      form.append("input_fidelity", IMAGE_INPUT_FIDELITY);
+      // gpt-image-2 always processes input images at high fidelity and
+      // rejects the input_fidelity param outright (400) if it's sent —
+      // unlike gpt-image-1.5, there's nothing to opt into here.
 
       const response = await fetch("https://api.openai.com/v1/images/edits", {
         method: "POST",
@@ -820,8 +784,12 @@ Regler du aldrig bryter mot:
   }
 
   $("startButton").addEventListener("click", async () => {
-    state.apiKey = $("apiKey").value.trim();
-    state.demo = !state.apiKey;
+    const key = $("apiKey").value.trim();
+    if (!key) {
+      alert("En OpenAI API-nyckel krävs — VIBE körs bara med live röstguide, se access-token-guide.md.");
+      return;
+    }
+    state.apiKey = key;
     state.eventName = $("eventName").value.trim() || "VIBE Testsession";
     $("apiKey").value = "";
     $("voiceHud").hidden = false;
@@ -829,28 +797,15 @@ Regler du aldrig bryter mot:
     await startCamera();
   });
 
-  $("demoButton").addEventListener("click", async () => {
-    state.apiKey = "";
-    state.demo = true;
-    $("voiceHud").hidden = false;
-    show("booth");
-    await startCamera();
-  });
-
   $("beginButton").addEventListener("click", async () => {
-    if (state.demo || !state.apiKey) {
-      speak(`${greeting()} Berätta vilket foto du vill ha. Jag hjälper dig att välja scen och hur den påverkar dig.`);
-      setTimeout(() => show("scene"), 1800);
-      return;
-    }
     $("vibeText").textContent = "Ansluter till VIBE…";
     $("beginButton").disabled = true;
     try {
       state.rt = await connectRealtime();
+      state.lastVoiceError = null;
       $("beginButton").hidden = true;
       $("beginButton").disabled = false;
       $("muteButton").hidden = false;
-      $("skipVoiceButton").hidden = false;
     } catch (error) {
       console.error(error);
       $("beginButton").disabled = false;
@@ -861,14 +816,14 @@ Regler du aldrig bryter mot:
         ? "Nätverksfel innan förfrågan nådde OpenAI — kontrollera internetanslutningen, eller så blockerar webbläsarens CORS-policy direkta röst-API-anrop (se docs/README.md)."
         : (error.message || "Okänt fel.");
       state.lastVoiceError = detail;
-      $("vibeText").textContent = `Rösten kunde inte anslutas — fortsätter utan liveröst.`;
+      $("vibeText").textContent = "Rösten kunde inte anslutas. Tryck \"Jag är redo\" för att försöka igen.";
       // No dev console on a guest iPhone: this is the only way an operator
       // ever sees *why* the connection failed, so it has to be shown, not
       // just logged (see docs/README.md's "check the browser console" note,
-      // which nobody testing on-device can actually act on).
-      alert(`Rösten kunde inte anslutas:\n\n${detail}\n\nFortsätter med skriftligt flöde. Felet visas även under Operatör.`);
-      speak(`${greeting()} Berätta vilket foto du vill ha. Jag hjälper dig att välja scen och hur den påverkar dig.`);
-      setTimeout(() => show("scene"), 1800);
+      // which nobody testing on-device can actually act on). There is no
+      // text/local fallback to fall into — voice is the only flow, so the
+      // guest stays here and retries once the underlying issue is fixed.
+      alert(`Rösten kunde inte anslutas:\n\n${detail}\n\nFelet visas även under Operatör. Åtgärda och tryck "Jag är redo" igen.`);
     }
   });
 
@@ -886,12 +841,6 @@ Regler du aldrig bryter mot:
       $("muteButton").textContent = "🎙 Lyssnar hela tiden — tryck för att pausa";
       $("vibeText").textContent = "Lyssnar…";
     }
-  });
-
-  $("skipVoiceButton").addEventListener("click", () => {
-    disconnectRealtime();
-    speak("Okej, skriv din idé istället.");
-    setTimeout(() => show("scene"), 1200);
   });
 
   document.querySelectorAll(".choice").forEach(button => {
@@ -912,9 +861,7 @@ Regler du aldrig bryter mot:
   document.querySelectorAll(".homeButton").forEach(b => b.addEventListener("click", resetGuest));
 
   $("operatorButton").addEventListener("click", () => {
-    $("keyStatus").textContent = state.apiKey
-      ? `API-nyckel aktiv för denna sidsession · slutar på ${state.apiKey.slice(-4)}`
-      : "Ingen API-nyckel aktiv · gränssnittsdemoläge";
+    $("keyStatus").textContent = `API-nyckel aktiv för denna sidsession · slutar på ${state.apiKey.slice(-4)}`;
     $("voiceErrorStatus").textContent = state.lastVoiceError
       ? `Senaste röstanslutningsfel: ${state.lastVoiceError}`
       : "Inget röstanslutningsfel denna session.";

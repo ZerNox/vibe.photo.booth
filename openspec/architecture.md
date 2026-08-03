@@ -34,10 +34,12 @@ guest journey —
 greeting, scene discovery, capture confirmation, and the post-result
 decision (save/retry/finish) — via three tools (`set_scene`,
 `confirm_capture`, `result_action`), not just the initial scene
-conversation. Local device text-to-speech is now a fallback only (demo
-mode / failed connection), not a cost-bounding measure for later stages —
-that earlier scoping decision was superseded when full-journey voice was
-requested. The booth orb is audio-reactive: a Web Audio analyser tapped
+conversation. An API key is required to start a session at all — there is
+no demo mode and no text/local fallback if the Realtime connection fails;
+the operator sees the raw error and retries instead. Local device
+text-to-speech is used only for short cues outside the live session itself
+(camera-ready and session-reset chimes), never as a stand-in for the
+voice-guided journey. The booth orb is audio-reactive: a Web Audio analyser tapped
 onto the live Realtime audio stream (analysis-only, not wired into
 playback, so a failure there never silences VIBE) drives the orb's
 scale/glow in real time while VIBE is actually speaking. Generated images
@@ -46,13 +48,14 @@ are auto-saved to the device on completion (see
 original "no on-device retention" stance). Image generation uses
 `gpt-image-2` (current flagship as of April 2026; superseded
 `gpt-image-1.5`, which itself superseded `gpt-image-1`, retiring
-2026-10-23), requested at explicit `quality: "high"` and
-`input_fidelity: "high"` — both at frontier tier, per the confirmed
+2026-10-23), requested at explicit `quality: "high"`, per the confirmed
 product priority that frontier-quality voice and image generation matter
 more than minimizing cost (`add-operating-parameters` §Trade-Off Priority
-Ranking). `input_fidelity` is additionally a named spec requirement
-regardless of that priority (`add-transformation-contract`'s
-identity-preservation rubric).
+Ranking). Unlike `gpt-image-1.5`, `gpt-image-2` has no `input_fidelity`
+parameter — the API rejects it (400) — because the model always processes
+image inputs at high fidelity automatically, which satisfies
+`add-transformation-contract`'s identity-preservation rubric without the
+app needing to request it.
 See `docs/README.md` for known integration caveats and cost trade-offs —
 none of the OpenAI wire-format details here have been verified against a
 live key from this environment.

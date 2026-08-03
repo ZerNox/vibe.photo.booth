@@ -21,7 +21,6 @@
         <p id="vibeText" aria-live="polite"></p>
         <div class="voice-hud-controls">
           <button id="muteButton" class="primary" hidden>🎙 Lyssnar hela tiden — tryck för att pausa</button>
-          <button id="skipVoiceButton" class="small secondary" hidden>Skriv istället</button>
         </div>
       </div>
     </div>
@@ -34,7 +33,7 @@
       <label>
         OpenAI API-nyckel
         <input id="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"
-          placeholder="Klistra in nyckel för denna session">
+          placeholder="Krävs — klistra in nyckel för denna session">
       </label>
 
       <label>
@@ -43,11 +42,11 @@
       </label>
 
       <div class="notice">
-        Nyckeln lagras endast i minnet. Om sidan laddas om raderas den.
+        Nyckeln lagras endast i minnet. Om sidan laddas om raderas den. VIBE
+        kräver en giltig nyckel — det finns inget demoläge.
       </div>
 
       <button id="startButton" class="primary">Starta VIBE</button>
-      <button id="demoButton" class="secondary">Starta utan API · gränssnittsdemo</button>
 
       <p id="versionBadge" class="version-badge"></p>
     </section>

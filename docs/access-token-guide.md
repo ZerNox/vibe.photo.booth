@@ -1,8 +1,9 @@
 # Getting an OpenAI API Key for VIBE
 
-VIBE's "Private API-key test" mode (see [`README.md`](README.md#private-api-key-test))
-asks for an **OpenAI API key**, pasted directly into the setup screen. This
-guide walks through creating one that's safe to use with this prototype.
+VIBE requires an **OpenAI API key**, pasted directly into the setup screen
+(see [`README.md`](README.md#openai-api-key-required)) — there is no
+demo/no-key mode. This guide walks through creating a key that's safe to
+use with this prototype.
 
 There's no separate "access token" step to configure yourself: the key you
 paste is used to call OpenAI's REST APIs directly, and for voice, the app
