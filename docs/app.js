@@ -6,6 +6,16 @@
   const REALTIME_MODEL = "gpt-realtime-2.1"; // flagship voice model — lower latency + GPT-5-class reasoning vs plain gpt-realtime
   const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
   const IMAGE_QUALITY = "high"; // low/medium/high — frontier quality is a confirmed product priority over cost
+  // OpenAI's /v1/images/edits is a plain server-side REST endpoint with no
+  // CORS headers for browser origins (unlike the Realtime endpoints below,
+  // which OpenAI built for direct browser use) — a browser blocks reading
+  // its response no matter how healthy the connection is. This CORS-only
+  // relay (see worker/) forwards the request to OpenAI server-to-server
+  // and hands the response back with this page's origin allowed; it holds
+  // no secret of its own; the same key entered on the setup screen is
+  // still sent through on every request exactly as before. Replace with
+  // your own deployed worker's *.workers.dev URL — see worker/README.md.
+  const IMAGE_EDIT_PROXY_URL = "https://vibe-photo-booth-image-proxy.YOUR-SUBDOMAIN.workers.dev";
   const BEST_SHOT_MODEL = "gpt-5.1"; // vision-capable chat model used to pick the best of the countdown burst shots
   const COUNTDOWN_START = 10;
   const CAPTURE_AT_OR_ABOVE = 7; // shots are taken while the on-screen number is 7, 8, 9 or 10
@@ -1034,35 +1044,6 @@ Regler du aldrig bryter mot:
     return `API-anrop misslyckades (${status}): ${detail}`;
   }
 
-  // Browsers never expose *why* a fetch() failed — a CORS block and a real
-  // connectivity failure both surface to script as the same generic
-  // TypeError, by design (so a page can't probe a server's CORS config).
-  // A `no-cors` request sidesteps CORS entirely: it still succeeds
-  // (opaquely) as long as the request physically reaches the server, even
-  // if that server would refuse to let a normal cors-mode request read the
-  // response. So firing one tells the two apart — if THIS succeeds where
-  // the real request just threw, the real failure was a CORS policy
-  // block, not a network problem.
-  //
-  // Deliberately probes a plain GET to a stable, non-upload endpoint
-  // (`/v1/models`) rather than re-POSTing to the exact URL that just
-  // failed: a GET is always a CORS-"simple" request with no body to parse,
-  // so it can't trip an upload endpoint's own WAF/body-validation quirks
-  // (e.g. rejecting a bodyless probe POST to a file-upload route with a
-  // connection reset instead of a clean HTTP status) — which would
-  // misreport a same-endpoint CORS block as "no network" instead. This
-  // only proves api.openai.com in general is reachable, not that the
-  // specific failing endpoint would have answered; that's the best a
-  // browser can determine without a server-side proxy.
-  async function probeApiDomainReachable() {
-    try {
-      await fetch("https://api.openai.com/v1/models", { method: "GET", mode: "no-cors" });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   // gpt-image-2 always processes at high fidelity regardless of input
   // resolution, and the output is requested at 1024x1024 anyway, so
   // uploading a larger source image only adds transfer time on a slow
@@ -1131,14 +1112,16 @@ Regler du aldrig bryter mot:
       // (up from an earlier 2) gives gpt-image-2's occasional long tail at
       // "high" quality more room before being treated as a hang.
       //
-      // A dropped wifi/mobile-data blip that never reaches OpenAI's server
+      // A dropped wifi/mobile-data blip, or the proxy worker cold-starting,
       // is often gone a second later, so per openspec's failure-recovery
       // design (transient network error: retry silently, up to 2 attempts)
-      // that specific case gets two silent retries before it's surfaced to
-      // the guest as an error. A CORS block fails identically every retry,
-      // so it's excluded via the same probe used to word the final error
-      // message, and a timeout/abort is never retried (already waited 3
-      // minutes once).
+      // that case gets two silent retries before it's surfaced to the
+      // guest as an error. A timeout/abort is never retried (already
+      // waited 3 minutes once). Once routed through IMAGE_EDIT_PROXY_URL
+      // (an origin we control the CORS headers for), a fetch()-level
+      // TypeError here can no longer be an ambiguous CORS-vs-network case
+      // the way a direct call to OpenAI's endpoint was — it just means the
+      // proxy wasn't reached, full stop.
       const MAX_TRANSIENT_NETWORK_RETRIES = 2;
       let response;
       let transientNetworkRetries = 0;
@@ -1146,7 +1129,7 @@ Regler du aldrig bryter mot:
         const timeoutController = new AbortController();
         const timeoutId = setTimeout(() => timeoutController.abort(), 180000);
         try {
-          response = await fetch("https://api.openai.com/v1/images/edits", {
+          response = await fetch(IMAGE_EDIT_PROXY_URL, {
             method: "POST",
             headers: { "Authorization": `Bearer ${state.apiKey}` },
             body: form,
@@ -1155,8 +1138,7 @@ Regler du aldrig bryter mot:
           break;
         } catch (fetchError) {
           const canRetry = fetchError instanceof TypeError
-            && transientNetworkRetries < MAX_TRANSIENT_NETWORK_RETRIES
-            && !(await probeApiDomainReachable());
+            && transientNetworkRetries < MAX_TRANSIENT_NETWORK_RETRIES;
           if (!canRetry) throw fetchError;
           transientNetworkRetries++;
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1203,11 +1185,12 @@ Regler du aldrig bryter mot:
         // Anything else already carries OpenAI's real status code + a
         // status-specific description (describeImageApiError above) and is
         // shown as-is — this branch is only for the opaque case where
-        // fetch() itself rejected before any HTTP response existed.
-        const reachedServer = await probeApiDomainReachable();
-        detail = reachedServer
-          ? "Webbläsarens CORS-policy blockerar troligen direkta bild-API-anrop till OpenAI (till skillnad från röst-API:et, som är byggt för webbläsaranrop, stödjer bild-redigerings-endpointen sannolikt inte det) — bekräftat via testanrop att api.openai.com i övrigt går att nå. Känd begränsning, se docs/README.md: kräver en serverlös gateway för att lösa permanent."
-          : "Nätverksfel — kunde inte nå api.openai.com alls (bekräftat via testanrop mot en annan endpoint). Kontrollera wifi/mobildata och försök igen.";
+        // fetch() itself rejected before any HTTP response existed. With
+        // IMAGE_EDIT_PROXY_URL on an origin we control the CORS headers
+        // for, this now just means the proxy wasn't reachable — either a
+        // real network problem, or the proxy itself is down/misconfigured
+        // (wrong URL, worker not deployed — see worker/README.md).
+        detail = "Kunde inte nå bildgenererings-proxyn. Kontrollera wifi/mobildata och försök igen. Om detta händer varje gång, kontrollera att proxyn är korrekt konfigurerad och distribuerad (se worker/README.md).";
       } else {
         detail = error.message;
       }
