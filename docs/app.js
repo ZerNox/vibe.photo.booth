@@ -20,6 +20,9 @@
   // noise, music) — server_vad still needs a real pause to end a turn.
   // If false triggers/cut-offs show up in the field, semantic_vad is the
   // documented alternative to try before hand-tuning these numbers further.
+  // Sent nested under session.audio.input.turn_detection, not as a
+  // top-level session field — the API returns "unknown_parameter" if it's
+  // sent at session.turn_detection instead (confirmed live, Aug 2026).
   const REALTIME_TURN_DETECTION = {
     type: "server_vad",
     threshold: 0.6,
@@ -276,10 +279,12 @@ Regler du aldrig bryter mot:
           type: "realtime",
           model: REALTIME_MODEL,
           instructions: SYSTEM_PROMPT,
-          audio: { output: { voice: REALTIME_VOICE } },
+          audio: {
+            output: { voice: REALTIME_VOICE },
+            input: { turn_detection: REALTIME_TURN_DETECTION }
+          },
           tools: ALL_TOOLS,
-          tool_choice: "auto",
-          turn_detection: REALTIME_TURN_DETECTION
+          tool_choice: "auto"
         }
       })
     });
@@ -374,10 +379,12 @@ Regler du aldrig bryter mot:
         session: {
           type: "realtime",
           instructions: SYSTEM_PROMPT,
-          audio: { output: { voice: REALTIME_VOICE } },
+          audio: {
+            output: { voice: REALTIME_VOICE },
+            input: { turn_detection: REALTIME_TURN_DETECTION }
+          },
           tools: ALL_TOOLS,
-          tool_choice: "auto",
-          turn_detection: REALTIME_TURN_DETECTION
+          tool_choice: "auto"
         }
       });
       sendEvent({ type: "response.create" }); // let VIBE greet first
