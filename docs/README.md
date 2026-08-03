@@ -168,6 +168,10 @@ Camera access requires HTTPS. The easiest path is GitHub Pages.
 
 ## Private API-key test
 
+See [`access-token-guide.md`](access-token-guide.md) for how to create a
+dedicated OpenAI API key for this app, including which API access it
+needs and how to budget/rotate it.
+
 - Paste a dedicated low-budget OpenAI API key on the startup screen.
 - The key remains only in page memory.
 - Reloading or closing the page clears it.
