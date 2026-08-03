@@ -613,7 +613,12 @@ Regler du aldrig bryter mot:
     ctx.fillText("AI-scen väntar", canvas.width - 24, canvas.height - bannerHeight / 2 + 7);
     ctx.textAlign = "left";
 
-    canvas.toBlob(blob => state.capturedBlob = blob, "image/jpeg", .9);
+    // Must be awaited before anything reads state.capturedBlob — toBlob is
+    // async, and generateAI() below checks the blob immediately. Without
+    // this await, generateAI() reliably loses the race on real devices
+    // (bigger canvas = slower encode) and bails out with the "take a photo
+    // first" alert even though a photo was just taken.
+    state.capturedBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .9));
     show("result");
 
     $("resultMessage").textContent = "Fotot är taget — AI valde den bästa av flera bilder.";
@@ -683,7 +688,7 @@ Regler du aldrig bryter mot:
 
     $("generateButton").disabled = true;
     $("generateButton").textContent = "Omvandlar…";
-    $("resultMessage").textContent = "Verklighetsrekonstruktion pågår.";
+    $("resultMessage").textContent = "Verklighetsrekonstruktion pågår (kan ta upp till en minut).";
 
     const idea = $("scenePrompt").value.trim();
     const summary = buildSummary();
@@ -707,11 +712,22 @@ Regler du aldrig bryter mot:
       // rejects the input_fidelity param outright (400) if it's sent —
       // unlike gpt-image-1.5, there's nothing to opt into here.
 
-      const response = await fetch("https://api.openai.com/v1/images/edits", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${state.apiKey}` },
-        body: form
-      });
+      // Without a timeout, a stalled/dropped connection leaves the button
+      // stuck on "Omvandlar…" forever with no error ever shown — fetch()
+      // has no built-in deadline, so one has to be imposed here.
+      const timeoutController = new AbortController();
+      const timeoutId = setTimeout(() => timeoutController.abort(), 120000);
+      let response;
+      try {
+        response = await fetch("https://api.openai.com/v1/images/edits", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${state.apiKey}` },
+          body: form,
+          signal: timeoutController.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         let apiError = null;
@@ -743,7 +759,9 @@ Regler du aldrig bryter mot:
       // it" case documented in docs/README.md. Anything else here already
       // carries OpenAI's real status code + a status-specific description
       // (see describeImageApiError above) and should be shown as-is.
-      const detail = error instanceof TypeError
+      const detail = error.name === "AbortError"
+        ? "Bildgenereringen tog för lång tid (över 2 minuter) och avbröts. Försök igen."
+        : error instanceof TypeError
         ? "Nätverksfel innan förfrågan nådde OpenAI — kontrollera internetanslutningen, eller så är det webbläsarens CORS-policy som blockerar direkta bild-API-anrop (känd begränsning, se docs/README.md)."
         : error.message;
       $("resultMessage").textContent = `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
