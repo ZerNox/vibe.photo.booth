@@ -139,7 +139,14 @@ Regler du aldrig bryter mot:
     lastImageError: null,
     micEnabledBeforeGeneration: null,
     imageGenerationLog: [],
-    imageGenerationSeq: 0
+    imageGenerationSeq: 0,
+    // True once an AI version has successfully been drawn onto resultCanvas
+    // for the *current* photo. A later retry can fail without touching the
+    // canvas at all (only a successful img.onload redraws it), so this is
+    // what tells the failure handler whether resultCanvas still shows that
+    // earlier success (needs a "the old one is still fine" message) or
+    // never got one (a real "nothing worked" failure).
+    hasGeneratedImage: false
   };
 
   // Full step-by-step trace of every generateAI() attempt — the short
@@ -995,6 +1002,7 @@ Regler du aldrig bryter mot:
     // (bigger canvas = slower encode) and bails out with the "take a photo
     // first" alert even though a photo was just taken.
     state.capturedBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .9));
+    state.hasGeneratedImage = false; // fresh capture — resultCanvas is the raw photo, not an AI version yet
     show("result");
 
     $("resultMessage").textContent = "Fotot är taget — AI valde den bästa av flera bilder.";
@@ -1250,6 +1258,7 @@ Regler du aldrig bryter mot:
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         canvas.getContext("2d").drawImage(img, 0, 0);
+        state.hasGeneratedImage = true;
         $("resultMessage").textContent = "Omvandling klar. Sparas automatiskt på enheten.";
         downloadImage();
         playFanfare();
@@ -1263,9 +1272,14 @@ Regler du aldrig bryter mot:
         stopGenerationQuips();
         logImageGen(`#${genId} FEL: bilden kunde inte avkodas av <img>.`);
         state.lastImageError = "OpenAI skickade en bild som inte gick att läsa in.";
-        $("resultMessage").textContent = "Bildgenerering misslyckades: bilden gick inte att läsa in. Kamera- och samtalsprototypen fungerar fortfarande.";
+        $("resultMessage").textContent = state.hasGeneratedImage
+          ? "Kunde inte skapa en ny variant: bilden gick inte att läsa in. Den tidigare bilden ovan är kvar och redan sparad."
+          : "Bildgenerering misslyckades: bilden gick inte att läsa in. Kamera- och samtalsprototypen fungerar fortfarande.";
         if (state.rt) {
-          injectContext("Bildomvandlingen misslyckades tekniskt (bilden gick inte att läsa in). Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.");
+          const line = state.hasGeneratedImage
+            ? "Den nya varianten misslyckades tekniskt (bilden gick inte att läsa in), men den tidigare bilden finns redan sparad."
+            : "Bildomvandlingen misslyckades tekniskt (bilden gick inte att läsa in).";
+          injectContext(`${line} Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.`);
         }
       };
       img.src = `data:image/png;base64,${b64}`;
@@ -1292,9 +1306,19 @@ Regler du aldrig bryter mot:
       }
       logImageGen(`#${genId} FEL, klassificerad som: "${detail}" — rått fel: ${error.name || "Error"}: ${(error.message || "").slice(0, 300)}. Flik dold under väntan? ${wentHiddenDuringRequest}.${error.stack ? ` Stack: ${error.stack.split("\n").slice(0, 3).join(" | ")}` : ""}`);
       state.lastImageError = `${detail} [${error.name || "Error"}: ${(error.message || "").slice(0, 200)}]`;
-      $("resultMessage").textContent = `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
+      // A retry (as opposed to the first attempt for this photo) fails
+      // without ever touching resultCanvas, so the guest still sees the
+      // earlier successful AI image sitting right above this message — a
+      // flat "misslyckades ... prototypen fungerar fortfarande" reads as
+      // if nothing worked at all, which is actively misleading here.
+      $("resultMessage").textContent = state.hasGeneratedImage
+        ? `Kunde inte skapa en ny variant: ${detail} Den tidigare bilden ovan är kvar och redan sparad.`
+        : `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
       if (state.rt) {
-        injectContext(`Bildomvandlingen misslyckades tekniskt (${detail}). Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.`);
+        const line = state.hasGeneratedImage
+          ? `Den nya varianten misslyckades tekniskt (${detail}), men den tidigare bilden finns redan sparad`
+          : `Bildomvandlingen misslyckades tekniskt (${detail})`;
+        injectContext(`${line}. Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.`);
       } else {
         alert(detail);
       }
@@ -1329,6 +1353,7 @@ Regler du aldrig bryter mot:
     disconnectRealtime();
     stopGenerationQuips();
     state.capturedBlob = null;
+    state.hasGeneratedImage = false;
     $("scenePrompt").value = "Lekfull scen på ett franskt café";
     $("customPrompt").value = "";
     state.treatment = "contextual";
