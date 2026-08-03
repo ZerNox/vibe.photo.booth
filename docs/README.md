@@ -52,7 +52,11 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 
 - The direct OpenAI image-edit request is experimental. A browser may
   block it because of CORS or API security constraints. The rest of the
-  booth prototype works without it.
+  booth prototype works without it. If generation fails, check
+  **Operatör → Senaste bildgenereringsfel**: the app runs a `no-cors`
+  probe against the same URL to tell a real network failure apart from a
+  CORS policy block (browsers otherwise report both identically to
+  script) and shows which one it confirmed, plus the raw browser error.
 - The Realtime voice integration talks directly to `api.openai.com` from
   the browser using the key entered on the setup screen (same
   client-held-key model as the image request — see
