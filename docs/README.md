@@ -24,7 +24,12 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 - Fallback scripted greeting + device speech synthesizer when no API key
   is entered (interface-demo mode) or if the Realtime connection fails
 - Contextual / custom / no-change treatment modes
-- Camera countdown and capture
+- Ten-second camera countdown that bursts four candidate shots near the
+  start (while the on-screen number reads 10, 9, 8, 7), then lets AI pick
+  the best one (`BEST_SHOT_MODEL`, a vision-capable chat model judging
+  open eyes / expression / motion blur / framing) before continuing —
+  falls back to a local sharpness heuristic (Laplacian variance) in
+  interface-demo mode or if that API call fails
 - Automatic on-device save the moment a generated image is ready (see
   "Where images end up" below for what "automatic" can and can't mean on
   iOS)
@@ -104,6 +109,14 @@ holds to a hard bar (confirmed for `gpt-image-1.5`, presumed to carry
 over to `gpt-image-2` but not independently verified). One generation
 happens automatically per capture, plus whatever "prova igen" (retry)
 requests the guest makes via `result_action`.
+
+**Best-shot picker — `gpt-5.1` (`BEST_SHOT_MODEL`):** one chat-completions
+call per capture with four low-detail JPEG frames attached, so this is a
+few thousand input tokens and a handful of output tokens — a small
+addition on top of the two costs above (not independently priced here;
+sanity-check against platform.openai.com/pricing along with the other
+figures). Only fires with an API key entered; interface-demo mode always
+uses the free local sharpness heuristic instead.
 
 **Combined, per booth session (one photo, regardless of group size):**
 roughly **$0.35–$0.55** at high quality / high fidelity with a typical
