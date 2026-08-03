@@ -150,10 +150,13 @@
       <p id="keyStatus"></p>
       <p id="voiceErrorStatus"></p>
       <p id="imageErrorStatus"></p>
-      <details id="imageLogDetails">
-        <summary>Fullständig bildgenereringslogg</summary>
-        <pre id="imageErrorLog">Ingen logg än.</pre>
-        <button id="copyImageLogButton" class="small">Kopiera logg</button>
+      <details id="sessionLogDetails">
+        <summary>Fullständig sessionslogg</summary>
+        <pre id="sessionLogPre">Ingen logg än.</pre>
+        <div class="button-row">
+          <button id="copySessionLogButton" class="small">Kopiera logg</button>
+          <button id="downloadSessionLogButton" class="small">Ladda ned logg</button>
+        </div>
       </details>
       <p id="operatorVersion" class="version-badge"></p>
       <button id="resetButton" class="secondary">Återställ gästsession</button>

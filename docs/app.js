@@ -145,7 +145,7 @@ Regler du aldrig bryter mot:
     lastVoiceError: null,
     lastImageError: null,
     micEnabledBeforeGeneration: null,
-    imageGenerationLog: [],
+    sessionLog: [],
     imageGenerationSeq: 0,
     // True once an AI version has successfully been drawn onto resultCanvas
     // for the *current* photo. A later retry can fail without touching the
@@ -156,23 +156,25 @@ Regler du aldrig bryter mot:
     hasGeneratedImage: false
   };
 
-  // Full step-by-step trace of every generateAI() attempt — the short
-  // lastImageError line (shown next to it in the Operator dialog) only ever
-  // reflects whichever attempt last wrote it, so re-opening the dialog after
-  // a retry, or leaving it open across one, can otherwise show a stale
-  // summary alongside a fresher one and look self-contradictory. This log
-  // is appended to live (not just re-rendered when the dialog opens) and
-  // tagged with a per-attempt id, so every retry's fetch attempts, HTTP
-  // status, raw API error body and final classification stay visible and
-  // attributable — the only diagnostics available on a guest's phone with
-  // no dev console.
-  function logImageGen(line) {
+  // Full step-by-step trace of the whole page session (camera/mic grant,
+  // presence auto-connect, voice connect/disconnect, every voice tool call,
+  // capture, and each generateAI() attempt) — spans every guest since the
+  // operator opened VIBE, not just the current photo. The short
+  // lastVoiceError/lastImageError lines shown elsewhere in the Operator
+  // dialog only ever reflect whichever attempt last wrote them, so
+  // reopening the dialog after a retry (or leaving it open across one) can
+  // otherwise show a stale summary next to a fresher on-screen message and
+  // look self-contradictory. This log is appended to live (not just
+  // re-rendered when the dialog opens), and can be copied or downloaded as
+  // a .txt file — the only diagnostics available on a guest's phone with no
+  // dev console.
+  function logEvent(line) {
     const now = new Date();
     const ts = now.toLocaleTimeString("sv-SE", { hour12: false }) + "." + String(now.getMilliseconds()).padStart(3, "0");
-    state.imageGenerationLog.push(`[${ts}] ${line}`);
-    if (state.imageGenerationLog.length > 80) state.imageGenerationLog.shift();
-    const el = $("imageErrorLog");
-    if (el) el.textContent = state.imageGenerationLog.join("\n");
+    state.sessionLog.push(`[${ts}] ${line}`);
+    if (state.sessionLog.length > 1000) state.sessionLog.shift();
+    const el = $("sessionLogPre");
+    if (el) el.textContent = state.sessionLog.join("\n");
   }
 
   const $ = (id) => document.getElementById(id);
@@ -223,11 +225,13 @@ Regler du aldrig bryter mot:
       $("video").srcObject = state.stream;
       $("cameraMessage").textContent = "Visuell inmatning aktiv.";
       $("status").textContent = "Redo";
+      logEvent("Kamera/mikrofon beviljad, presence-loop startad.");
       speak("Visuella system aktiva. Mänsklig interaktion kan nu börja.");
       startPresenceLoop();
     } catch (error) {
       $("cameraMessage").textContent = "Kamera- eller mikrofonbehörighet gavs inte.";
       $("status").textContent = "Behörighet krävs";
+      logEvent(`Kamera/mikrofon nekades eller misslyckades: ${error.name || "Error"}: ${error.message || ""}`);
       console.error(error);
     }
   }
@@ -655,6 +659,7 @@ Regler du aldrig bryter mot:
   function handleToolCall(name, callId, argsJson) {
     let args = {};
     try { args = JSON.parse(argsJson || "{}"); } catch { /* leave args empty */ }
+    logEvent(`Verktygsanrop: ${name}(${JSON.stringify(args)})`);
     sendRt({
       type: "conversation.item.create",
       item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ ok: true }) }
@@ -789,6 +794,7 @@ Regler du aldrig bryter mot:
 
   function disconnectRealtime() {
     if (!state.rt) return;
+    logEvent("Röst frånkopplad.");
     try { state.rt.dc.close(); } catch { /* already closed */ }
     try { state.rt.pc.close(); } catch { /* already closed */ }
     if (state.rt.micTrack) state.rt.micTrack.enabled = true;
@@ -809,9 +815,11 @@ Regler du aldrig bryter mot:
     stopPresenceLoop();
     $("vibeText").textContent = "Ansluter till VIBE…";
     $("beginButton").disabled = true;
+    logEvent(`Ansluter röst (auto=${auto})…`);
     try {
       state.rt = await connectRealtime();
       state.lastVoiceError = null;
+      logEvent("Röst ansluten.");
       $("beginButton").hidden = true;
       $("beginButton").disabled = false;
       $("muteButton").hidden = false;
@@ -825,6 +833,7 @@ Regler du aldrig bryter mot:
         ? "Nätverksfel innan förfrågan nådde OpenAI — kontrollera internetanslutningen, eller så blockerar webbläsarens CORS-policy direkta röst-API-anrop (se docs/README.md)."
         : (error.message || "Okänt fel.");
       state.lastVoiceError = detail;
+      logEvent(`Röstanslutning misslyckades: ${detail}`);
       $("vibeText").textContent = "Rösten kunde inte anslutas. Tryck \"Jag är redo\" för att försöka igen.";
       // No dev console on a guest iPhone: this is the only way an operator
       // ever sees *why* the connection failed, so it has to be shown, not
@@ -845,6 +854,7 @@ Regler du aldrig bryter mot:
   // ---- Capture / generation ----
 
   async function countdownAndCapture() {
+    logEvent("Nedräkning startad.");
     show("booth");
     injectContext("Gästen är redo. Säg mycket kort att nedräkningen är tio sekunder och att du tar flera bilder mot slutet av den, sedan är du tyst tills vidare.");
     const countdown = $("countdown");
@@ -980,10 +990,12 @@ Regler du aldrig bryter mot:
 
   async function finishCapture(shots) {
     if (!shots.length) {
+      logEvent("Capture misslyckades: inga bilder togs (kameran inte redo).");
       alert("Kameran är inte redo.");
       return;
     }
     const winner = await pickBestFrame(shots);
+    logEvent(`Foto klart: ${shots.length} bilder tagna, bästa vald.`);
 
     const canvas = $("resultCanvas");
     canvas.width = winner.width;
@@ -1149,7 +1161,7 @@ Regler du aldrig bryter mot:
     const genId = ++state.imageGenerationSeq;
     const idea = $("scenePrompt").value.trim();
     const summary = buildSummary();
-    logImageGen(`#${genId} Start — scen: "${idea}" · treatment: ${state.treatment}.`);
+    logEvent(`#${genId} Start — scen: "${idea}" · treatment: ${state.treatment}.`);
     const prompt = [
       "Edit this photograph into a polished, playful photo-booth image.",
       `Requested scene: ${idea}.`,
@@ -1173,7 +1185,7 @@ Regler du aldrig bryter mot:
 
     try {
       const uploadBlob = await shrinkForUpload($("resultCanvas"), 1024);
-      logImageGen(`#${genId} Uppladdningsbild förberedd: ${uploadBlob.size} bytes.`);
+      logEvent(`#${genId} Uppladdningsbild förberedd: ${uploadBlob.size} bytes.`);
 
       const form = new FormData();
       form.append("model", IMAGE_MODEL);
@@ -1200,7 +1212,7 @@ Regler du aldrig bryter mot:
         const timeoutController = new AbortController();
         const timeoutId = setTimeout(() => timeoutController.abort(), IMAGE_GENERATION_TIMEOUT_MS);
         const attemptStart = performance.now();
-        logImageGen(`#${genId} Fetch-försök ${transientNetworkRetries + 1}/${MAX_TRANSIENT_NETWORK_RETRIES + 1}…`);
+        logEvent(`#${genId} Fetch-försök ${transientNetworkRetries + 1}/${MAX_TRANSIENT_NETWORK_RETRIES + 1}…`);
         try {
           response = await fetch("https://api.openai.com/v1/images/edits", {
             method: "POST",
@@ -1208,7 +1220,7 @@ Regler du aldrig bryter mot:
             body: form,
             signal: timeoutController.signal
           });
-          logImageGen(`#${genId} Svar mottaget: HTTP ${response.status} ${response.statusText} (${Math.round(performance.now() - attemptStart)} ms).`);
+          logEvent(`#${genId} Svar mottaget: HTTP ${response.status} ${response.statusText} (${Math.round(performance.now() - attemptStart)} ms).`);
           break;
         } catch (fetchError) {
           // Only probe (an extra network round-trip) when it can actually
@@ -1223,7 +1235,7 @@ Regler du aldrig bryter mot:
           const canRetry = fetchError instanceof TypeError
             && transientNetworkRetries < MAX_TRANSIENT_NETWORK_RETRIES
             && reachable === false;
-          logImageGen(`#${genId} Fetch kastade ${fetchError.name}: ${fetchError.message} (${Math.round(performance.now() - attemptStart)} ms).${reachable !== null ? ` api.openai.com nåbar via probe? ${reachable}.` : ""} ${canRetry ? "Försöker igen om 1s." : "Ger upp, kastar felet vidare."}`);
+          logEvent(`#${genId} Fetch kastade ${fetchError.name}: ${fetchError.message} (${Math.round(performance.now() - attemptStart)} ms).${reachable !== null ? ` api.openai.com nåbar via probe? ${reachable}.` : ""} ${canRetry ? "Försöker igen om 1s." : "Ger upp, kastar felet vidare."}`);
           if (!canRetry) throw fetchError;
           transientNetworkRetries++;
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1239,23 +1251,23 @@ Regler du aldrig bryter mot:
           rawErrorText = await response.text();
           apiError = JSON.parse(rawErrorText)?.error;
         } catch { /* non-JSON error body */ }
-        logImageGen(`#${genId} Fel-body från OpenAI (HTTP ${response.status}): ${(apiError ? JSON.stringify(apiError) : rawErrorText).slice(0, 1000)}`);
+        logEvent(`#${genId} Fel-body från OpenAI (HTTP ${response.status}): ${(apiError ? JSON.stringify(apiError) : rawErrorText).slice(0, 1000)}`);
         throw new Error(describeImageApiError(response.status, apiError));
       }
 
       const data = await response.json();
       const b64 = data?.data?.[0]?.b64_json;
       if (!b64) {
-        logImageGen(`#${genId} Svar utan bild: ${JSON.stringify(data).slice(0, 500)}`);
+        logEvent(`#${genId} Svar utan bild: ${JSON.stringify(data).slice(0, 500)}`);
         throw new Error("OpenAI svarade utan att skicka någon bild. Försök igen.");
       }
-      logImageGen(`#${genId} Bild mottagen (${b64.length} tecken base64).`);
+      logEvent(`#${genId} Bild mottagen (${b64.length} tecken base64).`);
 
       const img = new Image();
       img.onload = () => {
         resumeMicAfterGeneration();
         stopGenerationQuips();
-        logImageGen(`#${genId} Bild avkodad OK (${img.naturalWidth}x${img.naturalHeight}).`);
+        logEvent(`#${genId} Bild avkodad OK (${img.naturalWidth}x${img.naturalHeight}).`);
         const canvas = $("resultCanvas");
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
@@ -1272,7 +1284,7 @@ Regler du aldrig bryter mot:
       img.onerror = () => {
         resumeMicAfterGeneration();
         stopGenerationQuips();
-        logImageGen(`#${genId} FEL: bilden kunde inte avkodas av <img>.`);
+        logEvent(`#${genId} FEL: bilden kunde inte avkodas av <img>.`);
         state.lastImageError = "OpenAI skickade en bild som inte gick att läsa in.";
         $("resultMessage").textContent = state.hasGeneratedImage
           ? "Kunde inte skapa en ny variant: bilden gick inte att läsa in. Den tidigare bilden ovan är kvar och redan sparad."
@@ -1307,7 +1319,7 @@ Regler du aldrig bryter mot:
       } else {
         detail = error.message;
       }
-      logImageGen(`#${genId} FEL, klassificerad som: "${detail}" — rått fel: ${error.name || "Error"}: ${(error.message || "").slice(0, 300)}. Flik dold under väntan? ${wentHiddenDuringRequest}.${error.stack ? ` Stack: ${error.stack.split("\n").slice(0, 3).join(" | ")}` : ""}`);
+      logEvent(`#${genId} FEL, klassificerad som: "${detail}" — rått fel: ${error.name || "Error"}: ${(error.message || "").slice(0, 300)}. Flik dold under väntan? ${wentHiddenDuringRequest}.${error.stack ? ` Stack: ${error.stack.split("\n").slice(0, 3).join(" | ")}` : ""}`);
       state.lastImageError = `${detail} [${error.name || "Error"}: ${(error.message || "").slice(0, 200)}]`;
       // A retry (as opposed to the first attempt for this photo) fails
       // without ever touching resultCanvas, so the guest still sees the
@@ -1326,7 +1338,7 @@ Regler du aldrig bryter mot:
         alert(detail);
       }
     } finally {
-      logImageGen(`#${genId} Försök avslutat.`);
+      logEvent(`#${genId} Försök avslutat.`);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       $("generateButton").disabled = false;
       $("generateButton").textContent = "Generera AI-version";
@@ -1353,6 +1365,7 @@ Regler du aldrig bryter mot:
   }
 
   function resetGuest() {
+    logEvent("--- Gästsession avslutad/återställd ---");
     disconnectRealtime();
     stopGenerationQuips();
     state.capturedBlob = null;
@@ -1376,6 +1389,7 @@ Regler du aldrig bryter mot:
     }
     state.apiKey = key;
     state.eventName = $("eventName").value.trim() || "VIBE Testsession";
+    logEvent(`=== Session startad — evenemang: "${state.eventName}" ===`);
     $("apiKey").value = "";
     $("voiceHud").hidden = false;
     show("booth");
@@ -1438,21 +1452,35 @@ Regler du aldrig bryter mot:
   // PWA shells can still lack navigator.clipboard, so fall back to a
   // select-all the guest/operator can copy manually rather than failing
   // silently with no way to get the log off the device.
-  $("copyImageLogButton").addEventListener("click", async () => {
-    const text = state.imageGenerationLog.join("\n") || "Ingen logg än.";
-    const button = $("copyImageLogButton");
+  $("copySessionLogButton").addEventListener("click", async () => {
+    const text = state.sessionLog.join("\n") || "Ingen logg än.";
+    const button = $("copySessionLogButton");
     try {
       await navigator.clipboard.writeText(text);
       button.textContent = "Kopierad!";
     } catch {
       const range = document.createRange();
-      range.selectNodeContents($("imageErrorLog"));
+      range.selectNodeContents($("sessionLogPre"));
       const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
       button.textContent = "Markerad — kopiera manuellt";
     }
     setTimeout(() => { button.textContent = "Kopiera logg"; }, 2000);
+  });
+
+  // Plain-text file, not tied to any single guest's photo — the log spans
+  // the whole page session (every guest since the operator opened VIBE), so
+  // it can be pulled at the end of the event rather than per photo.
+  $("downloadSessionLogButton").addEventListener("click", () => {
+    const text = state.sessionLog.join("\n") || "Ingen logg än.";
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.download = `vibe-logg-${Date.now()}.txt`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
   });
 
   window.addEventListener("beforeunload", () => {
