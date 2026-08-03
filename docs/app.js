@@ -137,8 +137,29 @@ Regler du aldrig bryter mot:
     rt: null,
     lastVoiceError: null,
     lastImageError: null,
-    micEnabledBeforeGeneration: null
+    micEnabledBeforeGeneration: null,
+    imageGenerationLog: [],
+    imageGenerationSeq: 0
   };
+
+  // Full step-by-step trace of every generateAI() attempt — the short
+  // lastImageError line (shown next to it in the Operator dialog) only ever
+  // reflects whichever attempt last wrote it, so re-opening the dialog after
+  // a retry, or leaving it open across one, can otherwise show a stale
+  // summary alongside a fresher one and look self-contradictory. This log
+  // is appended to live (not just re-rendered when the dialog opens) and
+  // tagged with a per-attempt id, so every retry's fetch attempts, HTTP
+  // status, raw API error body and final classification stay visible and
+  // attributable — the only diagnostics available on a guest's phone with
+  // no dev console.
+  function logImageGen(line) {
+    const now = new Date();
+    const ts = now.toLocaleTimeString("sv-SE", { hour12: false }) + "." + String(now.getMilliseconds()).padStart(3, "0");
+    state.imageGenerationLog.push(`[${ts}] ${line}`);
+    if (state.imageGenerationLog.length > 80) state.imageGenerationLog.shift();
+    const el = $("imageErrorLog");
+    if (el) el.textContent = state.imageGenerationLog.join("\n");
+  }
 
   const $ = (id) => document.getElementById(id);
   const screens = [...document.querySelectorAll(".screen")];
@@ -1110,8 +1131,10 @@ Regler du aldrig bryter mot:
     $("generateButton").textContent = "Omvandlar…";
     startGenerationQuips();
 
+    const genId = ++state.imageGenerationSeq;
     const idea = $("scenePrompt").value.trim();
     const summary = buildSummary();
+    logImageGen(`#${genId} Start — scen: "${idea}" · treatment: ${state.treatment}.`);
     const prompt = [
       "Edit this photograph into a polished, playful photo-booth image.",
       `Requested scene: ${idea}.`,
@@ -1135,6 +1158,7 @@ Regler du aldrig bryter mot:
 
     try {
       const uploadBlob = await shrinkForUpload($("resultCanvas"), 1024);
+      logImageGen(`#${genId} Uppladdningsbild förberedd: ${uploadBlob.size} bytes.`);
 
       const form = new FormData();
       form.append("model", IMAGE_MODEL);
@@ -1166,6 +1190,8 @@ Regler du aldrig bryter mot:
       for (;;) {
         const timeoutController = new AbortController();
         const timeoutId = setTimeout(() => timeoutController.abort(), 180000);
+        const attemptStart = performance.now();
+        logImageGen(`#${genId} Fetch-försök ${transientNetworkRetries + 1}/${MAX_TRANSIENT_NETWORK_RETRIES + 1}…`);
         try {
           response = await fetch("https://api.openai.com/v1/images/edits", {
             method: "POST",
@@ -1173,11 +1199,21 @@ Regler du aldrig bryter mot:
             body: form,
             signal: timeoutController.signal
           });
+          logImageGen(`#${genId} Svar mottaget: HTTP ${response.status} ${response.statusText} (${Math.round(performance.now() - attemptStart)} ms).`);
           break;
         } catch (fetchError) {
+          // Only probe (an extra network round-trip) when it can actually
+          // change the outcome — never on an AbortError (timeout already
+          // waited 3 minutes; no point adding more delay) or once retries
+          // are exhausted, matching the original short-circuited condition.
+          let reachable = null;
+          if (fetchError instanceof TypeError && transientNetworkRetries < MAX_TRANSIENT_NETWORK_RETRIES) {
+            reachable = await probeApiDomainReachable();
+          }
           const canRetry = fetchError instanceof TypeError
             && transientNetworkRetries < MAX_TRANSIENT_NETWORK_RETRIES
-            && !(await probeApiDomainReachable());
+            && reachable === false;
+          logImageGen(`#${genId} Fetch kastade ${fetchError.name}: ${fetchError.message} (${Math.round(performance.now() - attemptStart)} ms).${reachable !== null ? ` api.openai.com nåbar via probe? ${reachable}.` : ""} ${canRetry ? "Försöker igen om 1s." : "Ger upp, kastar felet vidare."}`);
           if (!canRetry) throw fetchError;
           transientNetworkRetries++;
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1188,18 +1224,28 @@ Regler du aldrig bryter mot:
 
       if (!response.ok) {
         let apiError = null;
-        try { apiError = (await response.json())?.error; } catch { /* non-JSON error body */ }
+        let rawErrorText = "";
+        try {
+          rawErrorText = await response.text();
+          apiError = JSON.parse(rawErrorText)?.error;
+        } catch { /* non-JSON error body */ }
+        logImageGen(`#${genId} Fel-body från OpenAI (HTTP ${response.status}): ${(apiError ? JSON.stringify(apiError) : rawErrorText).slice(0, 1000)}`);
         throw new Error(describeImageApiError(response.status, apiError));
       }
 
       const data = await response.json();
       const b64 = data?.data?.[0]?.b64_json;
-      if (!b64) throw new Error("OpenAI svarade utan att skicka någon bild. Försök igen.");
+      if (!b64) {
+        logImageGen(`#${genId} Svar utan bild: ${JSON.stringify(data).slice(0, 500)}`);
+        throw new Error("OpenAI svarade utan att skicka någon bild. Försök igen.");
+      }
+      logImageGen(`#${genId} Bild mottagen (${b64.length} tecken base64).`);
 
       const img = new Image();
       img.onload = () => {
         resumeMicAfterGeneration();
         stopGenerationQuips();
+        logImageGen(`#${genId} Bild avkodad OK (${img.naturalWidth}x${img.naturalHeight}).`);
         const canvas = $("resultCanvas");
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
@@ -1215,6 +1261,7 @@ Regler du aldrig bryter mot:
       img.onerror = () => {
         resumeMicAfterGeneration();
         stopGenerationQuips();
+        logImageGen(`#${genId} FEL: bilden kunde inte avkodas av <img>.`);
         state.lastImageError = "OpenAI skickade en bild som inte gick att läsa in.";
         $("resultMessage").textContent = "Bildgenerering misslyckades: bilden gick inte att läsa in. Kamera- och samtalsprototypen fungerar fortfarande.";
         if (state.rt) {
@@ -1243,6 +1290,7 @@ Regler du aldrig bryter mot:
       } else {
         detail = error.message;
       }
+      logImageGen(`#${genId} FEL, klassificerad som: "${detail}" — rått fel: ${error.name || "Error"}: ${(error.message || "").slice(0, 300)}. Flik dold under väntan? ${wentHiddenDuringRequest}.${error.stack ? ` Stack: ${error.stack.split("\n").slice(0, 3).join(" | ")}` : ""}`);
       state.lastImageError = `${detail} [${error.name || "Error"}: ${(error.message || "").slice(0, 200)}]`;
       $("resultMessage").textContent = `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
       if (state.rt) {
@@ -1251,6 +1299,7 @@ Regler du aldrig bryter mot:
         alert(detail);
       }
     } finally {
+      logImageGen(`#${genId} Försök avslutat.`);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       $("generateButton").disabled = false;
       $("generateButton").textContent = "Generera AI-version";
@@ -1354,6 +1403,28 @@ Regler du aldrig bryter mot:
   $("resetButton").addEventListener("click", () => {
     $("operatorDialog").close();
     resetGuest();
+  });
+
+  // Clipboard write needs a secure context + a live user gesture — both true
+  // here (button tap inside the HTTPS-served PWA) — but old iOS WKWebView
+  // PWA shells can still lack navigator.clipboard, so fall back to a
+  // select-all the guest/operator can copy manually rather than failing
+  // silently with no way to get the log off the device.
+  $("copyImageLogButton").addEventListener("click", async () => {
+    const text = state.imageGenerationLog.join("\n") || "Ingen logg än.";
+    const button = $("copyImageLogButton");
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Kopierad!";
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents($("imageErrorLog"));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      button.textContent = "Markerad — kopiera manuellt";
+    }
+    setTimeout(() => { button.textContent = "Kopiera logg"; }, 2000);
   });
 
   window.addEventListener("beforeunload", () => {
