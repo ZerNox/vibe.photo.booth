@@ -7,6 +7,9 @@
   const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
   const IMAGE_QUALITY = "high"; // low/medium/high — frontier quality is a confirmed product priority over cost
   const IMAGE_INPUT_FIDELITY = "high"; // preserve the source photo's faces/detail
+  const BEST_SHOT_MODEL = "gpt-5.1"; // vision-capable chat model used to pick the best of the countdown burst shots
+  const COUNTDOWN_START = 10;
+  const CAPTURE_AT_OR_ABOVE = 7; // shots are taken while the on-screen number is 7, 8, 9 or 10
   // Voice name introduced with the gpt-realtime GA release. If session
   // creation fails, this is the first thing to check against current
   // OpenAI docs — it's the field most likely to have moved.
@@ -442,28 +445,33 @@ Regler du aldrig bryter mot:
   async function countdownAndCapture() {
     show("booth");
     if (state.rt) {
-      injectContext("Gästen är redo. Säg mycket kort att du tar kortet om tre sekunder, sedan är du tyst tills vidare.");
+      injectContext("Gästen är redo. Säg mycket kort att nedräkningen är tio sekunder och att du tar flera bilder mot slutet av den, sedan är du tyst tills vidare.");
     } else {
-      speak("Mänsklig uppställning godkänd. Fotografering om tre, två, ett.");
+      speak("Mänsklig uppställning godkänd. Fotografering om tio sekunder.");
     }
     const countdown = $("countdown");
-    for (const n of [3, 2, 1]) {
+    const shots = [];
+    for (let n = COUNTDOWN_START; n >= 0; n--) {
       countdown.textContent = n;
+      if (n >= CAPTURE_AT_OR_ABOVE) {
+        const frame = grabRawFrame();
+        if (frame) shots.push(frame);
+      }
       await new Promise(r => setTimeout(r, 850));
     }
     countdown.textContent = "";
-    await captureFrame();
+    await finishCapture(shots);
   }
 
-  async function captureFrame() {
+  // Grabs one mirrored, undecorated video frame onto its own offscreen
+  // canvas — used four times during the countdown burst so the AI/local
+  // picker has raw candidates to compare before any banner is drawn.
+  function grabRawFrame() {
     const video = $("video");
-    if (!video.videoWidth) {
-      alert("Kameran är inte redo.");
-      return;
-    }
-    const canvas = $("resultCanvas");
+    if (!video.videoWidth) return null;
     const maxWidth = 1536;
     const scale = Math.min(1, maxWidth / video.videoWidth);
+    const canvas = document.createElement("canvas");
     canvas.width = Math.round(video.videoWidth * scale);
     canvas.height = Math.round(video.videoHeight * scale);
     const ctx = canvas.getContext("2d");
@@ -472,6 +480,114 @@ Regler du aldrig bryter mot:
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     ctx.restore();
+    return canvas;
+  }
+
+  // Laplacian-variance sharpness estimate — a higher score means more
+  // high-frequency detail, i.e. less motion blur / better focus. Used as
+  // the no-API-key fallback, and whenever the AI picker call fails.
+  function frameSharpness(canvas) {
+    const w = 160;
+    const scale = w / canvas.width;
+    const h = Math.max(1, Math.round(canvas.height * scale));
+    const small = document.createElement("canvas");
+    small.width = w;
+    small.height = h;
+    const ctx = small.getContext("2d");
+    ctx.drawImage(canvas, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    const gray = new Float32Array(w * h);
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+      gray[p] = data[i] * .299 + data[i + 1] * .587 + data[i + 2] * .114;
+    }
+    let variance = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x;
+        const laplacian = gray[idx - 1] + gray[idx + 1] + gray[idx - w] + gray[idx + w] - 4 * gray[idx];
+        variance += laplacian * laplacian;
+      }
+    }
+    return variance / (w * h);
+  }
+
+  function pickSharpestFrame(shots) {
+    let best = shots[0];
+    let bestScore = -Infinity;
+    for (const shot of shots) {
+      const score = frameSharpness(shot);
+      if (score > bestScore) {
+        bestScore = score;
+        best = shot;
+      }
+    }
+    return best;
+  }
+
+  // Asks a vision-capable model to look at all candidate shots side by
+  // side and return the index of the best one. Throws on any failure —
+  // callers fall back to the local sharpness heuristic.
+  async function pickBestFrameWithAI(shots) {
+    const images = shots.map(c => c.toDataURL("image/jpeg", 0.7));
+    const content = [
+      {
+        type: "text",
+        text: `Här är ${images.length} bilder tagna i följd under en nedräkning inför ett gruppfoto, numrerade 0 till ${images.length - 1} i den ordning de togs. Välj den bild där personerna ser mest redo och naturliga ut: ögonen öppna, inget rörelseoskärpa, bra ansiktsuttryck, alla synliga i bild. Svara med enbart siffran för den bästa bilden, inget annat.`
+      },
+      ...images.map(url => ({ type: "image_url", image_url: { url } }))
+    ];
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${state.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: BEST_SHOT_MODEL,
+        messages: [{ role: "user", content }],
+        max_tokens: 5
+      })
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Bildval misslyckades (${response.status}): ${text.slice(0, 300)}`);
+    }
+    const data = await response.json();
+    const reply = data?.choices?.[0]?.message?.content || "";
+    const match = reply.match(/\d+/);
+    if (!match) throw new Error("Inget giltigt bildval returnerades av AI.");
+    const index = parseInt(match[0], 10);
+    if (!Number.isInteger(index) || index < 0 || index >= shots.length) {
+      throw new Error("AI returnerade ett bildindex utanför intervallet.");
+    }
+    return shots[index];
+  }
+
+  async function pickBestFrame(shots) {
+    if (shots.length === 1) return shots[0];
+    if (state.apiKey && !state.demo) {
+      try {
+        return await pickBestFrameWithAI(shots);
+      } catch (err) {
+        console.warn("AI-bildval misslyckades, faller tillbaka på lokal skärpeanalys.", err);
+      }
+    }
+    return pickSharpestFrame(shots);
+  }
+
+  async function finishCapture(shots) {
+    if (!shots.length) {
+      alert("Kameran är inte redo.");
+      return;
+    }
+    const winner = await pickBestFrame(shots);
+
+    const canvas = $("resultCanvas");
+    canvas.width = winner.width;
+    canvas.height = winner.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(winner, 0, 0);
 
     const bannerHeight = Math.max(64, Math.round(canvas.height * 0.09));
     ctx.fillStyle = "rgba(0,0,0,.78)";
@@ -489,10 +605,10 @@ Regler du aldrig bryter mot:
     show("result");
 
     if (state.rt) {
-      $("resultMessage").textContent = "Fotot är taget.";
-      injectContext("Fotot har precis tagits. Säg mycket kort att du nu skapar bildomvandlingen.");
+      $("resultMessage").textContent = "Fotot är taget — AI valde den bästa av flera bilder.";
+      injectContext("Fotot har precis tagits — du tog flera bilder under nedräkningen och AI valde den bästa. Säg mycket kort att du nu skapar bildomvandlingen.");
     } else {
-      const resultText = "Fotografiskt bevis säkrat. Verklighetsomvandling redo.";
+      const resultText = "Fotografiskt bevis säkrat — bästa bilden vald bland flera. Verklighetsomvandling redo.";
       $("resultMessage").textContent = resultText;
       speak(resultText);
     }
