@@ -116,7 +116,8 @@ Regler du aldrig bryter mot:
     capturedBlob: null,
     eventName: "VIBE Testsession",
     speaking: false,
-    rt: null
+    rt: null,
+    lastVoiceError: null
   };
 
   const $ = (id) => document.getElementById(id);
@@ -853,7 +854,19 @@ Regler du aldrig bryter mot:
     } catch (error) {
       console.error(error);
       $("beginButton").disabled = false;
-      $("vibeText").textContent = "Rösten kunde inte anslutas — fortsätter utan liveröst.";
+      // A CORS block never reaches OpenAI's server, so fetch() rejects with a
+      // bare TypeError and no status/body — same failure mode documented for
+      // image generation in describeImageApiError/docs/README.md.
+      const detail = error instanceof TypeError
+        ? "Nätverksfel innan förfrågan nådde OpenAI — kontrollera internetanslutningen, eller så blockerar webbläsarens CORS-policy direkta röst-API-anrop (se docs/README.md)."
+        : (error.message || "Okänt fel.");
+      state.lastVoiceError = detail;
+      $("vibeText").textContent = `Rösten kunde inte anslutas — fortsätter utan liveröst.`;
+      // No dev console on a guest iPhone: this is the only way an operator
+      // ever sees *why* the connection failed, so it has to be shown, not
+      // just logged (see docs/README.md's "check the browser console" note,
+      // which nobody testing on-device can actually act on).
+      alert(`Rösten kunde inte anslutas:\n\n${detail}\n\nFortsätter med skriftligt flöde. Felet visas även under Operatör.`);
       speak(`${greeting()} Berätta vilket foto du vill ha. Jag hjälper dig att välja scen och hur den påverkar dig.`);
       setTimeout(() => show("scene"), 1800);
     }
@@ -902,6 +915,9 @@ Regler du aldrig bryter mot:
     $("keyStatus").textContent = state.apiKey
       ? `API-nyckel aktiv för denna sidsession · slutar på ${state.apiKey.slice(-4)}`
       : "Ingen API-nyckel aktiv · gränssnittsdemoläge";
+    $("voiceErrorStatus").textContent = state.lastVoiceError
+      ? `Senaste röstanslutningsfel: ${state.lastVoiceError}`
+      : "Inget röstanslutningsfel denna session.";
     $("operatorDialog").showModal();
   });
   $("closeOperator").addEventListener("click", () => $("operatorDialog").close());

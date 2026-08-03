@@ -55,9 +55,11 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
   client-held-key model as the image request — see
   `openspec/adr/ADR-001-client-only-architecture.md`). It was written
   against OpenAI's documented WebRTC flow but has not been verified
-  against a live key from this environment; if session setup fails,
-  check the browser console for the raw error from OpenAI first — it's
-  usually a one-line fix (e.g. a renamed voice or session field).
+  against a live key from this environment; if session setup fails, the
+  app now shows the raw OpenAI/network error in an alert and under
+  **Operatör → Senaste röstanslutningsfel** (no need to dig through the
+  browser console on-device) — it's usually a one-line fix (e.g. a
+  renamed voice or session field, or an invalid/under-scoped key).
 - The correct production design for either of the above uses a small
   serverless gateway, per ADR-001's stated revisit conditions.
 
