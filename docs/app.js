@@ -7,10 +7,11 @@
   const IMAGE_MODEL = "gpt-image-2"; // current flagship (Apr 2026), successor to gpt-image-1.5
   const IMAGE_QUALITY = "high"; // low/medium/high — frontier quality is a confirmed product priority over cost
   const IMAGE_INPUT_FIDELITY = "high"; // preserve the source photo's faces/detail
-  // Voice name introduced with the gpt-realtime GA release. If session
-  // creation fails, this is the first thing to check against current
-  // OpenAI docs — it's the field most likely to have moved.
-  const REALTIME_VOICE = "marin";
+  // Voice name introduced with the gpt-realtime GA release. "cedar" is the
+  // male-sounding voice from that release (the female-sounding sibling is
+  // "marin"). If session creation fails, this is the first thing to check
+  // against current OpenAI docs — it's the field most likely to have moved.
+  const REALTIME_VOICE = "cedar";
 
   // Hands-free listening: the guest never taps to talk. Threshold is
   // biased up from the API default because this runs at a party (crowd
