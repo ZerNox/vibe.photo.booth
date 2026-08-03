@@ -20,7 +20,7 @@
         <div class="speaker">VIBE</div>
         <p id="vibeText" aria-live="polite"></p>
         <div class="voice-hud-controls">
-          <button id="talkButton" class="primary" hidden>🎙 Tryck och prata</button>
+          <button id="muteButton" class="primary" hidden>🎙 Lyssnar hela tiden — tryck för att pausa</button>
           <button id="skipVoiceButton" class="small secondary" hidden>Skriv istället</button>
         </div>
       </div>
@@ -40,6 +40,17 @@
       <label>
         Eventnamn
         <input id="eventName" type="text" value="VIBE Testsession">
+      </label>
+
+      <label>
+        Dialekt på VIBE:s röst
+        <select id="voiceDialect">
+          <option value="rikssvenska" selected>Rikssvenska (standard)</option>
+          <option value="skanska">Skånska</option>
+          <option value="goteborgska">Göteborgska</option>
+          <option value="norrlandska">Norrländska</option>
+          <option value="finlandssvenska">Finlandssvenska</option>
+        </select>
       </label>
 
       <div class="notice">

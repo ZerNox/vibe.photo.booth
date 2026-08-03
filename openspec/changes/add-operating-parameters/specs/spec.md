@@ -10,12 +10,24 @@ always-visible touch control, not gated behind a voice-failure fallback.
   only, no voice input
 - Acceptance: full DETECTED→DELIVERY journey completable without speaking
 
-### OPS-FR-002 — Tap-to-speak activation
-The voice subsystem shall require an explicit per-turn guest activation
-(tap) before entering LISTENING; it shall not listen continuously.
+### OPS-FR-002 — Continuous hands-free listening
+**Revised 2026-08-03** (superseded the original tap-to-speak draft below
+before it was ever accepted — requiring a screen tap every turn defeated
+the point of a voice-driven booth). The voice subsystem shall enter
+LISTENING automatically for the whole session via server-side voice
+activity detection; no per-turn guest tap is required to talk. A manual
+mute control shall remain available for a guest who wants to pause the
+mic.
 - Priority: P1
 - Verification: code review of voice subsystem state entry; manual test
-- Acceptance: LISTENING is unreachable without a preceding tap event
+  completing a full session speaking freely, without tapping any
+  talk/listen control
+- Acceptance: LISTENING is reachable purely from guest speech onset;
+  a mute control exists and is reachable by touch
+
+~~The voice subsystem shall require an explicit per-turn guest activation
+(tap) before entering LISTENING; it shall not listen continuously.~~
+(original draft, superseded above)
 
 ### OPS-FR-003 — Barge-in support
 A guest tap or speech onset during SPEAKING shall transition the voice

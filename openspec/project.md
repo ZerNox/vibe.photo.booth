@@ -1,7 +1,7 @@
 # VIBE Photo Booth — Source of Truth Spec
 
 Status: v0.2 (superseding v0.1 monolithic brief)
-Last updated: 2026-08-02
+Last updated: 2026-08-03
 
 ## 1. Overview
 
@@ -115,6 +115,9 @@ demonstrated once implemented.
    duration of every session; failure/recovery design may assume operator
    intervention is possible (see `add-operating-parameters`, ADR-001).
 9. Conversation entry is hybrid, voice-preferred: every voice-driven step
-   has an always-visible touch equivalent. Listening is tap-to-speak, not
-   continuous open-mic. Barge-in is supported (see
-   `add-operating-parameters`).
+   has an always-visible touch equivalent. **Revised 2026-08-03:**
+   listening is continuous open-mic (server-side VAD), not tap-to-speak —
+   the original tap-per-turn design defeated the point of a voice-driven
+   booth by requiring a screen touch every turn. A manual mute toggle
+   remains for a guest who wants to step away from the mic. Barge-in is
+   supported (see `add-operating-parameters`).

@@ -56,11 +56,19 @@ who never speaks can complete the full journey by touch alone.
 
 ## Listening Mode
 
-Tap-to-speak, not continuous open-mic. Each conversational turn is
-explicitly activated by the guest (tap to talk), bounding accidental
-activation, cross-talk pickup, and event-noise interference. This is
-compatible with the existing 1.5s stable-presence dwell (PRES-FR-003),
-which triggers greeting, not listening.
+**Revised 2026-08-03:** continuous open-mic via server-side VAD, not
+tap-to-speak. The original tap-to-speak draft traded away the actual goal
+— a voice-driven booth a guest never has to touch — for noise/cross-talk
+robustness; live feedback confirmed that trade-off wasn't acceptable, since
+requiring a tap every turn is indistinguishable in practice from a
+touch-driven booth with a voice feature bolted on. Noise/cross-talk risk
+is now managed by tuning the VAD threshold and turn-silence duration for a
+party environment (see `REALTIME_TURN_DETECTION` in `docs/app.js`) instead
+of by gating every turn behind a tap; `semantic_vad` is the documented
+fallback if false triggers or premature cutoffs show up in the field. A
+manual mute control remains for a guest who wants to step away from the
+mic. This is compatible with the existing 1.5s stable-presence dwell
+(PRES-FR-003), which triggers greeting, not listening.
 
 ## Barge-In
 

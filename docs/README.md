@@ -13,7 +13,10 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 - A floating, audio-reactive orb (Web Audio analyser on the live voice
   stream) that visibly moves/glows in sync with VIBE's actual speech
   volume, not a generic looping animation
-- Push-to-talk (tap to start/stop) rather than continuous listening
+- Hands-free listening — the mic stays live for the whole session
+  (server-side voice activity detection decides when a guest's turn
+  starts/ends), no tap required to talk. A mute button lets a guest pause
+  the mic if they want to step away from it.
 - Voice drives the whole flow via three tools VIBE calls itself:
   `set_scene` (scene + treatment), `confirm_capture` (ready to shoot or
   change the scene), `result_action` (save / try again / finish) — a
@@ -21,6 +24,11 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 - Every voice step still has a full touch equivalent (scene screen,
   review buttons, save/retry/finish buttons) — voice is additive, not a
   replacement for the touch UI
+- Optional Swedish dialect for VIBE's live voice (rikssvenska / skånska /
+  göteborgska / norrländska / finlandssvenska), picked on the setup
+  screen — best-effort, since OpenAI's realtime voices don't expose a
+  dialect parameter; it's an instruction the model follows, not a
+  guaranteed authentic accent.
 - Fallback scripted greeting + device speech synthesizer when no API key
   is entered (interface-demo mode) or if the Realtime connection fails
 - Contextual / custom / no-change treatment modes

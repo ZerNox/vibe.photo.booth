@@ -27,7 +27,8 @@ either on-device or at the third-party provider directly.
 
 **Implementation status**: the Voice Module is implemented in
 `docs/app.js` using the flagship `gpt-realtime-2.1` model (WebRTC,
-push-to-talk) — lower latency and GPT-5-class reasoning versus the
+hands-free — server-side VAD keeps the mic live for the whole session, no
+tap-to-talk) — lower latency and GPT-5-class reasoning versus the
 earlier plain `gpt-realtime`. The session now stays open for the entire
 guest journey —
 greeting, scene discovery, capture confirmation, and the post-result

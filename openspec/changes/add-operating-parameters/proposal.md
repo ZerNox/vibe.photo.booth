@@ -17,7 +17,8 @@ barge-in is supported (v0.1 review Q2, Q3, Q5, Q11–13).
 - Rank trade-off priorities.
 - Decide conversation-entry mode: hybrid, voice-preferred, touch always
   available.
-- Decide listening mode: tap-to-speak, not continuous open-mic.
+- Decide listening mode: continuous open-mic via server-side VAD, not
+  tap-to-speak (revised 2026-08-03 — see OPS-FR-002).
 - Make barge-in an explicit, testable requirement (currently only implied
   by the voice statechart's INTERRUPTED state).
 
