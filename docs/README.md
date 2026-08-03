@@ -66,6 +66,10 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
   probe against the same URL to tell a real network failure apart from a
   CORS policy block (browsers otherwise report both identically to
   script) and shows which one it confirmed, plus the raw browser error.
+  A request that fails before reaching OpenAI's server at all (dropped
+  wifi/mobile data) is retried silently up to twice before this error is
+  ever shown to the guest — a CORS block, a timeout, or an HTTP error
+  response from OpenAI is never retried this way.
 - The Realtime voice integration talks directly to `api.openai.com` from
   the browser using the key entered on the setup screen (same
   client-held-key model as the image request — see

@@ -1119,18 +1119,39 @@ Regler du aldrig bryter mot:
       // has no built-in deadline, so one has to be imposed here. 3 minutes
       // (up from an earlier 2) gives gpt-image-2's occasional long tail at
       // "high" quality more room before being treated as a hang.
-      const timeoutController = new AbortController();
-      const timeoutId = setTimeout(() => timeoutController.abort(), 180000);
+      //
+      // A dropped wifi/mobile-data blip that never reaches OpenAI's server
+      // is often gone a second later, so per openspec's failure-recovery
+      // design (transient network error: retry silently, up to 2 attempts)
+      // that specific case gets two silent retries before it's surfaced to
+      // the guest as an error. A CORS block fails identically every retry,
+      // so it's excluded via the same probe used to word the final error
+      // message, and a timeout/abort is never retried (already waited 3
+      // minutes once).
+      const MAX_TRANSIENT_NETWORK_RETRIES = 2;
       let response;
-      try {
-        response = await fetch("https://api.openai.com/v1/images/edits", {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${state.apiKey}` },
-          body: form,
-          signal: timeoutController.signal
-        });
-      } finally {
-        clearTimeout(timeoutId);
+      let transientNetworkRetries = 0;
+      for (;;) {
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => timeoutController.abort(), 180000);
+        try {
+          response = await fetch("https://api.openai.com/v1/images/edits", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${state.apiKey}` },
+            body: form,
+            signal: timeoutController.signal
+          });
+          break;
+        } catch (fetchError) {
+          const canRetry = fetchError instanceof TypeError
+            && transientNetworkRetries < MAX_TRANSIENT_NETWORK_RETRIES
+            && !(await probeCorsBlock("https://api.openai.com/v1/images/edits"));
+          if (!canRetry) throw fetchError;
+          transientNetworkRetries++;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } finally {
+          clearTimeout(timeoutId);
+        }
       }
 
       if (!response.ok) {
