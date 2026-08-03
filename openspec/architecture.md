@@ -25,7 +25,21 @@ iPad / iPhone Browser (Safari, PWA)
 No backend service exists in this phase. Every arrow above terminates
 either on-device or at the third-party provider directly.
 
-**Implementation status**: the Voice Module is implemented in
+**Implementation status**: the Presence Module is implemented in
+`docs/app.js` as a background-subtraction heuristic sampled from a hidden
+80×60 downscale of the live video frame — a learned "empty booth" baseline
+is diffed against each new frame entirely on-device, so checking "is
+anyone there?" makes no network or paid-API call (PRES-FR-003's "free
+local model"). While no one is detected, a quiet synthesized Web Audio
+arpeggio plays as an attention-driving idle loop; the moment presence is
+detected the loop stops, and once presence holds continuously for 2s the
+app auto-connects the Realtime voice session (the same path the manual
+"Jag är redo" button uses) so the guest journey continues into
+GUEST_GREETING without requiring a tap. The manual button remains as the
+always-visible touch equivalent (provisional decision 9) and as the retry
+path if the auto-connect attempt itself fails.
+
+The Voice Module is implemented in
 `docs/app.js` using the flagship `gpt-realtime-2.1` model (WebRTC,
 hands-free — server-side VAD keeps the mic live for the whole session, no
 tap-to-talk) — lower latency and GPT-5-class reasoning versus the
