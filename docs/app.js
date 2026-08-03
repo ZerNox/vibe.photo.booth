@@ -1052,6 +1052,22 @@ Regler du aldrig bryter mot:
     }
   }
 
+  // gpt-image-2 always processes at high fidelity regardless of input
+  // resolution, and the output is requested at 1024x1024 anyway, so
+  // uploading a larger source image only adds transfer time on a slow
+  // venue connection without improving the result. Downscaling here is
+  // separate from state.capturedBlob (used for local save/share), which
+  // stays full resolution.
+  async function shrinkForUpload(canvas, maxDim) {
+    const scale = Math.min(1, maxDim / Math.max(canvas.width, canvas.height));
+    if (scale === 1) return new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .85));
+    const small = document.createElement("canvas");
+    small.width = Math.max(1, Math.round(canvas.width * scale));
+    small.height = Math.max(1, Math.round(canvas.height * scale));
+    small.getContext("2d").drawImage(canvas, 0, 0, small.width, small.height);
+    return new Promise(resolve => small.toBlob(resolve, "image/jpeg", .85));
+  }
+
   async function generateAI() {
     if (!state.capturedBlob) {
       alert("Ta ett foto först.");
@@ -1073,11 +1089,25 @@ Regler du aldrig bryter mot:
       "Do not add written text inside the generated scene."
     ].join(" ");
 
+    // If the tab/screen goes to background mid-request (guest's phone auto-
+    // locks, or the operator switches apps), iOS Safari can throttle or
+    // fully suspend the network request — indistinguishable from a genuine
+    // stall unless we specifically watch for it, so a real timeout can be
+    // misdiagnosed as "OpenAI/network is slow" when the real cause is the
+    // screen locking. See docs/README.md's "disable auto-lock" guidance.
+    let wentHiddenDuringRequest = false;
+    const onVisibilityChange = () => {
+      if (document.hidden) wentHiddenDuringRequest = true;
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     try {
+      const uploadBlob = await shrinkForUpload($("resultCanvas"), 1024);
+
       const form = new FormData();
       form.append("model", IMAGE_MODEL);
       form.append("prompt", prompt);
-      form.append("image", state.capturedBlob, "capture.jpg");
+      form.append("image", uploadBlob, "capture.jpg");
       form.append("size", "1024x1024");
       form.append("quality", IMAGE_QUALITY);
       // gpt-image-2 always processes input images at high fidelity and
@@ -1086,9 +1116,11 @@ Regler du aldrig bryter mot:
 
       // Without a timeout, a stalled/dropped connection leaves the button
       // stuck on "Omvandlar…" forever with no error ever shown — fetch()
-      // has no built-in deadline, so one has to be imposed here.
+      // has no built-in deadline, so one has to be imposed here. 3 minutes
+      // (up from an earlier 2) gives gpt-image-2's occasional long tail at
+      // "high" quality more room before being treated as a hang.
       const timeoutController = new AbortController();
-      const timeoutId = setTimeout(() => timeoutController.abort(), 120000);
+      const timeoutId = setTimeout(() => timeoutController.abort(), 180000);
       let response;
       try {
         response = await fetch("https://api.openai.com/v1/images/edits", {
@@ -1132,7 +1164,9 @@ Regler du aldrig bryter mot:
       stopGenerationQuips();
       let detail;
       if (error.name === "AbortError") {
-        detail = "Bildgenereringen tog för lång tid (över 2 minuter) och avbröts. Försök igen.";
+        detail = wentHiddenDuringRequest
+          ? "Bildgenereringen avbröts efter för lång tid (över 3 minuter) — skärmen/fliken gick i bakgrunden under väntan, vilket kan pausa förfrågan på iOS. Håll skärmen aktiv (inaktivera automatisk låsning, se docs/README.md) och försök igen."
+          : "Bildgenereringen tog för lång tid (över 3 minuter) och avbröts. Försök igen.";
       } else if (error instanceof TypeError) {
         // Anything else already carries OpenAI's real status code + a
         // status-specific description (describeImageApiError above) and is
@@ -1153,6 +1187,7 @@ Regler du aldrig bryter mot:
         alert(detail);
       }
     } finally {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       $("generateButton").disabled = false;
       $("generateButton").textContent = "Generera AI-version";
     }
