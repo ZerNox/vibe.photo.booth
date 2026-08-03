@@ -75,7 +75,7 @@ delta specs, then recorded here once accepted.
 
 | ID | Statement | Priority | Verification | Status |
 |----|-----------|----------|---------------|--------|
-| PRES-FR-003 | Stable-presence activation: 1.5s dwell in activation area transitions PRESENCE_CANDIDATE → GUEST_GREETING | P1 | Automated integration test + iPad field test | Accepted |
+| PRES-FR-003 | Stable-presence activation: 2s dwell in activation area transitions PRESENCE_CANDIDATE → GUEST_GREETING | P1 | Automated integration test + iPad field test | Accepted |
 | *(pending)* | See open changes in `changes/` | — | — | Proposed |
 
 ## 7. Open Changes
