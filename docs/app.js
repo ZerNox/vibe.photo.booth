@@ -919,4 +919,16 @@ Regler du aldrig bryter mot:
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(console.error);
   }
+
+  // Lets the operator tell which deployed version they're looking at,
+  // since the service worker above can otherwise keep an old build cached.
+  fetch("./version.json", { cache: "no-store" })
+    .then(res => res.json())
+    .then(({ deployedAt, commit }) => {
+      const label = `Version: ${new Date(deployedAt).toLocaleString("sv-SE", { dateStyle: "medium", timeStyle: "short" })}`
+        + (commit ? ` (${commit.slice(0, 7)})` : "");
+      $("versionBadge").textContent = label;
+      $("operatorVersion").textContent = label;
+    })
+    .catch(() => {});
 })();
