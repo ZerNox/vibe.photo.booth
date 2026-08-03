@@ -171,6 +171,14 @@ Camera access requires HTTPS. The easiest path is GitHub Pages.
 6. Wait for the GitHub Pages URL.
 7. Open that HTTPS URL in Safari on the iPhone.
 
+## Checking which version is deployed
+
+Every push to `main` triggers `.github/workflows/stamp-deploy-version.yml`,
+which stamps `docs/version.json` with the deploy datetime (UTC) and commit
+SHA. The app shows it as "Version: …" on the setup screen and in the
+operator dialog — useful for confirming a Home Screen PWA has picked up
+the latest build rather than a stale service-worker cache.
+
 ## Add to the iPhone Home Screen
 
 1. Open the GitHub Pages URL in Safari.

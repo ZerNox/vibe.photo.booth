@@ -1,0 +1,40 @@
+name: Stamp deploy version
+
+# GitHub Pages serves docs/ directly from main, so the datetime this
+# workflow writes to docs/version.json is effectively the deploy time.
+# app.js reads it to show the operator which build they're looking at.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/version.json"
+
+permissions:
+  contents: write
+
+jobs:
+  stamp:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Write docs/version.json
+        run: |
+          cat > docs/version.json <<EOF
+          {
+            "deployedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${{ github.sha }}"
+          }
+          EOF
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/version.json
+          git diff --staged --quiet || git commit -m "Stamp deploy version [skip ci]"
+          git push
