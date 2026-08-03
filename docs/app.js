@@ -120,7 +120,8 @@ Regler du aldrig bryter mot:
     eventName: "VIBE Testsession",
     speaking: false,
     rt: null,
-    lastVoiceError: null
+    lastVoiceError: null,
+    lastImageError: null
   };
 
   const $ = (id) => document.getElementById(id);
@@ -274,7 +275,7 @@ Regler du aldrig bryter mot:
   };
 
   const GENERATION_QUIPS = [
-    "Väver ihop pixlar och lite magi…",
+    "Väver ihop pixlar och lite magi… (kan ta upp till en minut)",
     "Ber AI:n snällt om att skynda på…",
     "Lånar lite Hollywood-glans…",
     "Skakar om den kreativa trolldomen…",
@@ -732,10 +733,11 @@ Regler du aldrig bryter mot:
     ctx.fillText("AI-scen väntar", canvas.width - 24, canvas.height - bannerHeight / 2 + 7);
     ctx.textAlign = "left";
 
-    // Must be awaited: generateAI() (called below) guards on capturedBlob
-    // being set, and toBlob's callback would otherwise still be pending
-    // when that guard runs, silently skipping the AI transformation on
-    // every single capture.
+    // Must be awaited before anything reads state.capturedBlob — toBlob is
+    // async, and generateAI() below checks the blob immediately. Without
+    // this await, generateAI() reliably loses the race on real devices
+    // (bigger canvas = slower encode) and bails out with the "take a photo
+    // first" alert even though a photo was just taken.
     state.capturedBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .9));
     show("result");
 
@@ -798,6 +800,24 @@ Regler du aldrig bryter mot:
     return `API-anrop misslyckades (${status}): ${detail}`;
   }
 
+  // Browsers never expose *why* a fetch() failed — a CORS block and a real
+  // connectivity failure both surface to script as the same generic
+  // TypeError, by design (so a page can't probe a server's CORS config).
+  // A `no-cors` request sidesteps CORS entirely: it still succeeds
+  // (opaquely) as long as the request physically reaches the server, even
+  // if that server would refuse to let a normal cors-mode request read the
+  // response. So retrying the same URL in no-cors mode tells them apart —
+  // if THIS succeeds where the real request just threw, the real failure
+  // was a CORS policy block, not a network problem.
+  async function probeCorsBlock(url) {
+    try {
+      await fetch(url, { method: "POST", mode: "no-cors" });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function generateAI() {
     if (!state.capturedBlob) {
       alert("Ta ett foto först.");
@@ -830,11 +850,22 @@ Regler du aldrig bryter mot:
       // rejects the input_fidelity param outright (400) if it's sent —
       // unlike gpt-image-1.5, there's nothing to opt into here.
 
-      const response = await fetch("https://api.openai.com/v1/images/edits", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${state.apiKey}` },
-        body: form
-      });
+      // Without a timeout, a stalled/dropped connection leaves the button
+      // stuck on "Omvandlar…" forever with no error ever shown — fetch()
+      // has no built-in deadline, so one has to be imposed here.
+      const timeoutController = new AbortController();
+      const timeoutId = setTimeout(() => timeoutController.abort(), 120000);
+      let response;
+      try {
+        response = await fetch("https://api.openai.com/v1/images/edits", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${state.apiKey}` },
+          body: form,
+          signal: timeoutController.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         let apiError = null;
@@ -865,14 +896,22 @@ Regler du aldrig bryter mot:
     } catch (error) {
       console.error(error);
       stopGenerationQuips();
-      // A CORS block never reaches OpenAI's server, so fetch() rejects with
-      // a bare TypeError and no status code — that's the "browser blocked
-      // it" case documented in docs/README.md. Anything else here already
-      // carries OpenAI's real status code + a status-specific description
-      // (see describeImageApiError above) and should be shown as-is.
-      const detail = error instanceof TypeError
-        ? "Nätverksfel innan förfrågan nådde OpenAI — kontrollera internetanslutningen, eller så är det webbläsarens CORS-policy som blockerar direkta bild-API-anrop (känd begränsning, se docs/README.md)."
-        : error.message;
+      let detail;
+      if (error.name === "AbortError") {
+        detail = "Bildgenereringen tog för lång tid (över 2 minuter) och avbröts. Försök igen.";
+      } else if (error instanceof TypeError) {
+        // Anything else already carries OpenAI's real status code + a
+        // status-specific description (describeImageApiError above) and is
+        // shown as-is — this branch is only for the opaque case where
+        // fetch() itself rejected before any HTTP response existed.
+        const reachedServer = await probeCorsBlock("https://api.openai.com/v1/images/edits");
+        detail = reachedServer
+          ? "Webbläsarens CORS-policy blockerar direkta bild-API-anrop till OpenAI — bekräftat via testanrop (nätverket når fram, men svaret nekas). Känd begränsning, se docs/README.md: kräver en serverlös gateway för att lösa permanent."
+          : "Nätverksfel — begäran nådde aldrig OpenAI (bekräftat via testanrop). Kontrollera wifi/mobildata och försök igen.";
+      } else {
+        detail = error.message;
+      }
+      state.lastImageError = `${detail} [${error.name || "Error"}: ${(error.message || "").slice(0, 200)}]`;
       $("resultMessage").textContent = `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
       if (state.rt) {
         injectContext(`Bildomvandlingen misslyckades tekniskt (${detail}). Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.`);
@@ -1000,6 +1039,9 @@ Regler du aldrig bryter mot:
     $("voiceErrorStatus").textContent = state.lastVoiceError
       ? `Senaste röstanslutningsfel: ${state.lastVoiceError}`
       : "Inget röstanslutningsfel denna session.";
+    $("imageErrorStatus").textContent = state.lastImageError
+      ? `Senaste bildgenereringsfel: ${state.lastImageError}`
+      : "Inget bildgenereringsfel denna session.";
     $("operatorDialog").showModal();
   });
   $("closeOperator").addEventListener("click", () => $("operatorDialog").close());
