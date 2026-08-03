@@ -887,7 +887,25 @@ Regler du aldrig bryter mot:
   });
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(console.error);
+    // sw.js already skipWaiting()s + clients.claim()s on activate, but that
+    // only lets a NEW service worker start controlling future requests —
+    // it does nothing for app.js already loaded into this tab's memory. On
+    // an installed iOS PWA especially, "closing and reopening" often just
+    // resumes the same backgrounded page rather than a true reload, so
+    // without this the guest/operator can sit on a stale build
+    // indefinitely with no visible sign anything is wrong. Reloading once
+    // when control actually changes hands is safe here — there's no
+    // session state worth preserving across a reload (see
+    // openspec/changes/add-failure-recovery FAIL-FR-001).
+    let reloadedForUpdate = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloadedForUpdate) return;
+      reloadedForUpdate = true;
+      location.reload();
+    });
+    navigator.serviceWorker.register("./sw.js")
+      .then(reg => reg.update().catch(() => { /* best effort */ }))
+      .catch(console.error);
   }
 
   // Lets the operator tell which deployed version they're looking at,
