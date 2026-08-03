@@ -37,3 +37,13 @@ following becomes true:
 
 This ADR does not need to be "won" against — it's a phase-appropriate
 tradeoff with a documented exit condition.
+
+## Update: narrow CORS-only relay added
+
+A Cloudflare Worker (`worker/`) was added to work around `/v1/images/edits`
+having no CORS headers for browser origins — see `worker/README.md`. It is
+not the backend gateway described above: it holds no API key, enforces no
+limits, and does not change key custody — the same client-held key is
+forwarded through on every request unchanged. It exists solely so the
+browser is allowed to read a response OpenAI already sent. The costs and
+threshold above still stand unmodified.

@@ -59,24 +59,23 @@ This is a static Progressive Web App intended for private testing on an iPhone 1
 
 ## Important limitations
 
-- The direct OpenAI image-edit request is experimental. Unlike the
-  Realtime voice endpoint below (which OpenAI built for direct browser
-  calls), `/v1/images/edits` is a plain server-side REST endpoint and
-  most likely never sends CORS headers, so a browser is expected to
-  block the response even when the request itself reaches OpenAI fine.
-  The rest of the booth prototype works without it. If generation fails,
-  check **Operatör → Senaste bildgenereringsfel**: the app runs a
-  `no-cors` `GET` probe against a separate, lightweight endpoint
-  (`/v1/models`, not the upload URL itself — a bodyless probe POST
-  straight to the upload endpoint risked tripping its own WAF/body
-  validation and misreporting a CORS block as "no network") to tell a
-  real network failure apart from a CORS policy block (browsers
-  otherwise report both identically to script) and shows which one it
-  confirmed, plus the raw browser error.
-  A request that fails before reaching OpenAI's server at all (dropped
-  wifi/mobile data, or the domain itself unreachable) is retried
-  silently up to twice before this error is ever shown to the guest — a
-  CORS block, a timeout, or an HTTP error response from OpenAI is never
+- The image-edit request goes through a small Cloudflare Worker (see
+  `worker/README.md`) instead of calling OpenAI directly, because
+  `/v1/images/edits` is a plain server-side REST endpoint with no CORS
+  headers for browser origins (unlike the Realtime voice endpoint below,
+  which OpenAI built for direct browser calls) — a browser blocks reading
+  the response no matter how healthy the connection is. The worker holds
+  no secret of its own; it forwards the same key entered on the setup
+  screen straight through to OpenAI server-to-server, where CORS doesn't
+  apply, and returns the response with this app's origin allowed to read
+  it. **This requires the one-time setup in `worker/README.md`** — until
+  `IMAGE_EDIT_PROXY_URL` in `app.js` points at a deployed worker, image
+  generation will fail (the rest of the booth prototype works without it).
+  If generation still fails after that, check **Operatör → Senaste
+  bildgenereringsfel**: a request that fails before reaching the proxy at
+  all (dropped wifi/mobile data, or the proxy itself down/misconfigured)
+  is retried silently up to twice before this error is ever shown to the
+  guest — a timeout or an HTTP error response from OpenAI is never
   retried this way.
 - The Realtime voice integration talks directly to `api.openai.com` from
   the browser using the key entered on the setup screen (same
