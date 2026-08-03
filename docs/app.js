@@ -531,6 +531,30 @@ Regler du aldrig bryter mot:
     downloadImage();
   }
 
+  function describeImageApiError(status, apiError) {
+    const code = apiError?.code || "";
+    if (status === 401) {
+      return "API-nyckeln är ogiltig eller saknas. Kontrollera nyckeln i Operatörsinställningar.";
+    }
+    if (status === 403) {
+      return "API-nyckeln saknar behörighet för bildgenerering (kontrollera organisationens verifiering hos OpenAI).";
+    }
+    if (status === 429) {
+      if (code === "insufficient_quota") {
+        return "API-nyckelns saldo/kvot hos OpenAI är slut. Fyll på credits eller använd en annan nyckel.";
+      }
+      return "För många förfrågningar just nu (rate limit hos OpenAI). Vänta en liten stund och försök igen.";
+    }
+    if (status === 400 && code === "content_policy_violation") {
+      return "Bilden eller idén bröt mot OpenAIs innehållspolicy. Prova en annan bild eller idé.";
+    }
+    if (status >= 500) {
+      return "OpenAIs servrar har tillfälliga problem just nu. Försök igen om en stund.";
+    }
+    const detail = apiError?.message ? apiError.message.slice(0, 300) : "Okänt fel.";
+    return `API-anrop misslyckades (${status}): ${detail}`;
+  }
+
   async function generateAI() {
     if (state.demo || !state.apiKey) {
       alert("Denna session körs i gränssnittsdemoläge. Ange en API-nyckel i Operatörsinställningar för att försöka med direkt bildgenerering.");
@@ -572,13 +596,14 @@ Regler du aldrig bryter mot:
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`API-anrop misslyckades (${response.status}): ${text.slice(0, 400)}`);
+        let apiError = null;
+        try { apiError = (await response.json())?.error; } catch { /* non-JSON error body */ }
+        throw new Error(describeImageApiError(response.status, apiError));
       }
 
       const data = await response.json();
       const b64 = data?.data?.[0]?.b64_json;
-      if (!b64) throw new Error("Ingen bilddata returnerades.");
+      if (!b64) throw new Error("OpenAI svarade utan att skicka någon bild. Försök igen.");
 
       const img = new Image();
       img.onload = () => {
@@ -595,12 +620,14 @@ Regler du aldrig bryter mot:
       img.src = `data:image/png;base64,${b64}`;
     } catch (error) {
       console.error(error);
-      const msg = "Direktgenerering i webbläsaren misslyckades. Detta kan bero på webbläsarens API-begränsningar; kamera- och samtalsprototypen fungerar fortfarande.";
-      $("resultMessage").textContent = msg;
+      const detail = error instanceof TypeError
+        ? "Nätverksfel: kunde inte nå OpenAI. Kontrollera internetanslutningen."
+        : error.message;
+      $("resultMessage").textContent = `Bildgenerering misslyckades: ${detail} Kamera- och samtalsprototypen fungerar fortfarande.`;
       if (state.rt) {
-        injectContext("Bildomvandlingen misslyckades tekniskt. Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.");
+        injectContext(`Bildomvandlingen misslyckades tekniskt (${detail}). Beklaga mycket kort och fråga om gästen vill försöka igen eller är klara.`);
       } else {
-        alert(error.message);
+        alert(detail);
       }
     } finally {
       $("generateButton").disabled = false;
