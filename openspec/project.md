@@ -52,6 +52,15 @@ staffed-pilot or commercial operating model (see `adr/ADR-001-*` for the
 threshold conditions). Reintroducing a backend gateway at that point is
 the documented escape hatch, not a redesign.
 
+### 3.1 Risk Acceptance Log
+
+Dated instances where an operator has formally accepted the client-held
+credential risk above for a specific deployment profile.
+
+| Date | Operator | Profile | Cap | Notes |
+|------|----------|---------|-----|-------|
+| 2026-08-03 | joakim.weivert@gmail.com | Single iPad, isolated (not on a shared/public network), run and operated locally by the key owner | $5 hard spend cap set on the OpenAI project's Limits page | Accepted as within the existing mitigation profile (single-operator custody, non-public use) — no new mitigations required; see `docs/access-token-guide.md` §3 for cap setup |
+
 ## 4. Non-Goals (this phase)
 
 - No backend/gateway
